@@ -75,6 +75,34 @@ st.caption(
     "Champagne Index — attacking output per match — the following season?"
 )
 
+with st.expander("ℹ️ Methodology"):
+    st.markdown(
+        """
+**Why goals + assists per match?** "Attacking output per match" (goals plus
+assists, divided by matches played) is a standard, recognized way to measure a
+team's attacking production in football analytics — it's not a metric invented
+for this project. It rewards both scoring and creating goals, and dividing by
+matches makes it comparable across teams that played different numbers of
+games in a season.
+
+**Why a simple linear trend and not a trained ML model?** The underlying data
+is team-season level — one row per team per competition per season, not
+individual match events. With that little granularity (hundreds, not millions,
+of independent observations once you group by team-season), a trained model
+with many parameters would be more likely to fit noise than to find a real
+signal. A simple linear regression (`scipy.stats.linregress`) reports its
+correlation and p-value openly, so the strength (or weakness) of any
+relationship is visible rather than hidden behind a model's internal weights.
+
+**What does r = -0.663 actually mean?** Across the top-5 European leagues,
+a team's Champagne Index and its final league position move together fairly
+strongly: teams with a higher attacking-output score tend to finish higher
+(closer to 1st) in the table, and that pattern is very unlikely to be
+coincidence (p < 0.0001 across 484 team-seasons) — in plain terms, "goals +
+assists per match" really does track with how good a team's season was.
+        """
+    )
+
 tab_ranking, tab_team, tab_model, tab_standings, tab_perf = st.tabs(
     ["Ranking", "Team trend", "Spend vs. output", "Standings", "Performance"]
 )
