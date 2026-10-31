@@ -1,4 +1,4 @@
--- Calcio Champagne — SQL exploration (Issue #2)
+-- Calcio Champagne — SQL exploration (Issue #2, Issue #6)
 -- Business-style questions against the live database. Run after `docker compose up`
 -- has finished (loader + pipeline done), e.g.:
 --   docker compose exec db psql -U team -d calcio -f /dev/stdin < sql/exploration.sql
@@ -84,3 +84,65 @@ FROM champagne_results
 WHERE total_spend > 0
 ORDER BY spend_efficiency ASC
 LIMIT 20;
+
+-- ============================================================================
+-- Issue #6 (stretch): two more metrics, same GROUP BY pattern as
+-- champagne_index_by_team_season in sql/champagne_queries.sql.
+-- ============================================================================
+
+-- Discipline Index: cards per match, per team-season. Lower = more disciplined.
+CREATE OR REPLACE VIEW discipline_index_by_team_season AS
+SELECT
+    team_id,
+    team_name,
+    season_name,
+    competition_id,
+    competition_name,
+    MAX(nb_in_group) AS matches,
+    SUM(yellow_cards) AS total_yellow_cards,
+    SUM(second_yellow_cards) AS total_second_yellows,
+    SUM(direct_red_cards) AS total_direct_reds,
+    ROUND(
+        (SUM(yellow_cards) + SUM(second_yellow_cards) + SUM(direct_red_cards))
+        / NULLIF(MAX(nb_in_group), 0),
+        2
+    ) AS discipline_index
+FROM player_performances
+GROUP BY team_id, team_name, season_name, competition_id, competition_name;
+
+-- Defensive Solidity Index: the defensive mirror of Champagne Index.
+-- goals_conceded_per_match: lower is better. clean_sheet_rate: higher is better.
+CREATE OR REPLACE VIEW defensive_solidity_by_team_season AS
+SELECT
+    team_id,
+    team_name,
+    season_name,
+    competition_id,
+    competition_name,
+    MAX(nb_in_group) AS matches,
+    ROUND(SUM(goals_conceded) / NULLIF(MAX(nb_in_group), 0), 2) AS goals_conceded_per_match,
+    ROUND(SUM(clean_sheets)::numeric / NULLIF(MAX(nb_in_group), 0), 3) AS clean_sheet_rate
+FROM player_performances
+GROUP BY team_id, team_name, season_name, competition_id, competition_name;
+
+-- Most disciplined team-seasons (min 15 matches, to drop small-sample noise).
+SELECT team_name, season_name, competition_name, matches, discipline_index
+FROM discipline_index_by_team_season
+WHERE matches >= 15
+ORDER BY discipline_index ASC
+LIMIT 10;
+
+-- Best defense relative to spend: join defensive solidity to transfer spend.
+SELECT
+    d.team_name,
+    d.season_name,
+    d.competition_name,
+    d.goals_conceded_per_match,
+    d.clean_sheet_rate,
+    s.total_spend
+FROM defensive_solidity_by_team_season d
+JOIN transfer_spend_by_team_season s
+    ON s.team_id = d.team_id AND s.season_name = d.season_name
+WHERE d.matches >= 15 AND s.total_spend > 0
+ORDER BY d.goals_conceded_per_match ASC
+LIMIT 10;
