@@ -24,10 +24,29 @@ this one isn't submitted as LUISS coursework.
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 2. `git clone https://github.com/Ataika/Calcio-Champagne-prediction-automated-system`
-3. Download the dataset (see **Data** below) and copy its 11 folders into `data/`, so you
-   end up with e.g. `data/player_performances/player_performances.csv`.
+3. Download the dataset (see **Data** below — you'll need a free Kaggle account to
+   download it) and copy its 11 folders into `data/`, so you end up with exactly these
+   11 paths:
+   ```
+   data/player_profiles/player_profiles.csv
+   data/player_performances/player_performances.csv
+   data/player_market_value/player_market_value.csv
+   data/player_latest_market_value/player_latest_market_value.csv
+   data/player_injuries/player_injuries.csv
+   data/player_national_performances/player_national_performances.csv
+   data/player_teammates_played_with/player_teammates_played_with.csv
+   data/team_details/team_details.csv
+   data/team_competitions_seasons/team_competitions_seasons.csv
+   data/team_children/team_children.csv
+   data/transfer_history/transfer_history.csv
+   ```
+   If the Kaggle zip extracts flat (all CSVs in one folder, no subfolders), you'll need
+   to make these 11 subfolders yourself and move each CSV into its matching one — the
+   loader reads each file at its own path, not just anywhere under `data/`.
 4. (Optional but recommended) Download the match-results enrichment — see **Data**
-   below — into `data/matches/{E0,SP1,I1,D1,F1}/{season}.csv`.
+   below — into `data/matches/{E0,SP1,I1,D1,F1}/{season}.csv`, where `{season}` is the
+   4-digit code football-data.co.uk itself uses (e.g. `2425.csv` for the 24/25 season),
+   not `24-25` or `2024-25`.
 5. `cp .env.example .env`
 6. `docker compose up`
 7. Open <http://localhost:8502>
@@ -35,6 +54,10 @@ this one isn't submitted as LUISS coursework.
 Optional, once the stack is up: `docker compose run --rm measure` runs the performance
 benchmark and writes `measure/results/results.json`, which the dashboard's
 **Performance** tab reads — reload the page after it finishes.
+
+**Starting over**: if you want to reload after fixing your `data/` layout (or just want
+a clean slate), `docker compose down -v` first — `up` alone won't re-run the loader
+once the database volume already exists.
 
 ## Data
 
