@@ -11,6 +11,7 @@ high Champagne Index actually mean a team finishes higher in the table?
 | Ataika | [@Ataika](https://github.com/Ataika) |
 | jacoposcaccianoce | [@jacoposcaccianoce](https://github.com/jacoposcaccianoce) |
 | lilllaz | [@lilllaz](https://github.com/lilllaz) |
+| nedalozanovska | [nedalozanovska](https://github.com/nedalozanovska) |
 
 ## How to run
 
