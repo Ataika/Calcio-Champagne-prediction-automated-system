@@ -156,3 +156,19 @@ CREATE TABLE IF NOT EXISTS transfer_history (
     value_at_transfer NUMERIC,
     transfer_fee NUMERIC
 );
+
+-- Enrichment: real match results, from football-data.co.uk (not part of the Kaggle
+-- archive — see data/matches/ and loader/load_matches.py). Gives the project an
+-- actual outcome (goals, result, league position) to check the Champagne Index
+-- against, instead of only match-count proxies from player_performances.
+CREATE TABLE IF NOT EXISTS match_results (
+    league_code TEXT NOT NULL,       -- football-data.co.uk code, e.g. 'E0' (Premier League)
+    season_name TEXT NOT NULL,       -- Transfermarkt-style '24/25', so it joins to champagne_results
+    match_date DATE,
+    home_team_id INTEGER NOT NULL,   -- resolved via team_name_map
+    away_team_id INTEGER NOT NULL,
+    home_goals INTEGER,
+    away_goals INTEGER,
+    result CHAR(1),                  -- 'H', 'D', 'A' (full-time result)
+    referee TEXT
+);

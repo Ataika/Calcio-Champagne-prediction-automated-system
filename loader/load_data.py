@@ -5,13 +5,20 @@ GET:   the CSVs are already on disk, mounted read-only at /data (see docker-comp
 STORE: this script creates the schema (sql/schema.sql) and bulk-loads each CSV with
        Postgres's native COPY, then builds the indices the processing step needs.
 """
+import csv
 import os
-import sys
 import time
+from datetime import datetime
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 DATA_DIR = "/data"
+MATCHES_DIR = os.path.join(DATA_DIR, "matches")
+
+# football-data.co.uk league code -> what shows up as competition_id in champagne_results.
+# Only used for logging; match_results itself keys off team_id, not competition_id.
+MATCH_LEAGUES = ["E0", "SP1", "I1", "D1", "F1"]
 
 # (table_name, path to its CSV under /data) — one folder per table, matching the
 # Kaggle archive's own layout, so "copy archive/* into data/" just works.
@@ -68,6 +75,14 @@ def run_schema(conn):
     print("[loader] schema created", flush=True)
 
 
+def run_team_name_map(conn):
+    with open("/sql/team_name_map.sql") as f:
+        with conn.cursor() as cur:
+            cur.execute(f.read())
+    conn.commit()
+    print("[loader] team_name_map seeded", flush=True)
+
+
 def load_table(conn, table, csv_relpath):
     path = os.path.join(DATA_DIR, csv_relpath)
     if not os.path.exists(path):
@@ -84,9 +99,85 @@ def load_table(conn, table, csv_relpath):
     conn.commit()
 
 
+def season_folder_to_name(folder_season):
+    """'2425' -> '24/25', matching champagne_results.season_name."""
+    return f"{folder_season[:2]}/{folder_season[2:]}"
+
+
+def load_matches(conn):
+    """Optional enrichment (requirement: 'where the system got richer than the
+    minimum'). If data/matches/ wasn't downloaded, skip quietly — the rest of the
+    system works fine without it, this only unlocks the 'Champagne vs. league
+    position' comparison in the dashboard."""
+    if not os.path.isdir(MATCHES_DIR):
+        print(f"[loader] {MATCHES_DIR} not found, skipping match enrichment (optional)", flush=True)
+        return 0
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT league_code, source_name, team_id FROM team_name_map;")
+        name_to_id = {(lc, name): tid for lc, name, tid in cur.fetchall()}
+
+    rows = []
+    unmapped = set()
+    for league_code in MATCH_LEAGUES:
+        league_dir = os.path.join(MATCHES_DIR, league_code)
+        if not os.path.isdir(league_dir):
+            continue
+        for filename in sorted(os.listdir(league_dir)):
+            if not filename.endswith(".csv"):
+                continue
+            season_name = season_folder_to_name(filename.removesuffix(".csv"))
+            path = os.path.join(league_dir, filename)
+            with open(path, newline="", encoding="utf-8-sig") as f:
+                for row in csv.DictReader(f):
+                    home = row.get("HomeTeam", "").strip()
+                    away = row.get("AwayTeam", "").strip()
+                    home_id = name_to_id.get((league_code, home))
+                    away_id = name_to_id.get((league_code, away))
+                    if home_id is None:
+                        unmapped.add((league_code, home))
+                        continue
+                    if away_id is None:
+                        unmapped.add((league_code, away))
+                        continue
+                    date_str = row.get("Date", "")
+                    try:
+                        match_date = datetime.strptime(date_str, "%d/%m/%Y").date()
+                    except ValueError:
+                        match_date = None
+                    rows.append((
+                        league_code, season_name, match_date, home_id, away_id,
+                        row.get("FTHG") or None, row.get("FTAG") or None,
+                        row.get("FTR") or None, row.get("Referee") or None,
+                    ))
+
+    if unmapped:
+        print(f"[loader] WARNING: {len(unmapped)} unmapped team names skipped: "
+              f"{sorted(unmapped)[:10]}", flush=True)
+
+    with conn.cursor() as cur:
+        cur.execute("TRUNCATE TABLE match_results;")
+        execute_values(
+            cur,
+            "INSERT INTO match_results "
+            "(league_code, season_name, match_date, home_team_id, away_team_id, "
+            " home_goals, away_goals, result, referee) VALUES %s",
+            rows,
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mr_season "
+            "ON match_results (league_code, season_name);"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_mr_home ON match_results (home_team_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_mr_away ON match_results (away_team_id);")
+    conn.commit()
+    return len(rows)
+
+
 def main():
     conn = connect()
     run_schema(conn)
+    run_team_name_map(conn)
 
     total_rows = 0
     t0 = time.perf_counter()
@@ -109,6 +200,15 @@ def main():
             cur.execute(statement)
     conn.commit()
     index_elapsed = time.perf_counter() - t_idx
+
+    t_matches = time.perf_counter()
+    n_matches = load_matches(conn)
+    if n_matches:
+        print(
+            f"[loader] match_results: {n_matches:,} rows in "
+            f"{time.perf_counter() - t_matches:.1f}s",
+            flush=True,
+        )
 
     print(
         f"[loader] done: {total_rows:,} rows across {len(TABLES)} tables, "

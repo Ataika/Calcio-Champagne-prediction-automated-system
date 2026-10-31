@@ -1,9 +1,12 @@
-"""SHOW step: a Streamlit dashboard over champagne_results / champagne_model.
+"""SHOW step: a Streamlit dashboard over champagne_results / champagne_model /
+league_standings.
 
-Four tabs: a season ranking table, one team's index trend with its predicted next
-value, the spend-vs-output scatter that the trend line is fitted on, and a
-Performance tab that reads the benchmark results (run `docker compose run measure`
-to populate it — see measure/benchmark.py).
+Five tabs: a season ranking table, one team's index trend with its predicted next
+value, the spend-vs-output scatter that the trend line is fitted on, a Standings tab
+checking Champagne Index against real league position (needs the optional
+football-data.co.uk enrichment — see loader/load_data.py), and a Performance tab
+that reads the benchmark results (run `docker compose run measure` to populate it —
+see measure/benchmark.py).
 """
 import json
 import os
@@ -42,8 +45,29 @@ def load_model() -> pd.DataFrame:
     )
 
 
+@st.cache_data(ttl=300)
+def load_standings() -> pd.DataFrame:
+    try:
+        return pd.read_sql("SELECT * FROM league_standings", get_connection())
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def load_standings_model() -> pd.DataFrame:
+    try:
+        return pd.read_sql(
+            "SELECT * FROM champagne_vs_position_model ORDER BY computed_at DESC LIMIT 1",
+            get_connection(),
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
 df = load_results()
 model_df = load_model()
+standings_df = load_standings()
+standings_model_df = load_standings_model()
 
 st.title("⚽ Calcio Champagne")
 st.caption(
@@ -51,8 +75,8 @@ st.caption(
     "Champagne Index — attacking output per match — the following season?"
 )
 
-tab_ranking, tab_team, tab_model, tab_perf = st.tabs(
-    ["Ranking", "Team trend", "Spend vs. output", "Performance"]
+tab_ranking, tab_team, tab_model, tab_standings, tab_perf = st.tabs(
+    ["Ranking", "Team trend", "Spend vs. output", "Standings", "Performance"]
 )
 
 with tab_ranking:
@@ -152,6 +176,64 @@ with tab_model:
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("No model stats yet — run the pipeline first.")
+
+with tab_standings:
+    if standings_df.empty:
+        st.info(
+            "No match data loaded. Download the football-data.co.uk CSVs into "
+            "data/matches/{E0,SP1,I1,D1,F1}/{season}.csv and re-run "
+            "`docker compose up` — see README. This tab checks whether a high "
+            "Champagne Index actually translates into a higher league position."
+        )
+    else:
+        leagues = sorted(standings_df["league_code"].dropna().unique())
+        seasons = sorted(standings_df["season_name"].dropna().unique())
+        col1, col2 = st.columns(2)
+        league = col1.selectbox("League", leagues)
+        season_pick = col2.selectbox("Season", seasons, index=len(seasons) - 1)
+
+        table_view = standings_df[
+            (standings_df["league_code"] == league) & (standings_df["season_name"] == season_pick)
+        ].sort_values("position")
+        st.dataframe(
+            table_view[
+                [
+                    "position", "team_name", "played", "wins", "draws", "losses",
+                    "goals_for", "goals_against", "goal_diff", "points", "champagne_index",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if not standings_model_df.empty:
+            m = standings_model_df.iloc[0]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Correlation (r)", f"{m['r_value']:.3f}")
+            c2.metric("p-value", f"{m['p_value']:.4f}")
+            c3.metric("Team-seasons", int(m["n_observations"]))
+            st.caption(
+                "Negative r means a higher Champagne Index goes with a better "
+                "(lower-numbered) league position — i.e. attacking output does "
+                "track with where a team finishes."
+            )
+
+        sample = standings_df.dropna(subset=["champagne_index", "position"])
+        fig3 = go.Figure()
+        fig3.add_trace(
+            go.Scatter(
+                x=sample["champagne_index"], y=sample["position"], mode="markers",
+                text=sample["team_name"] + " " + sample["season_name"] + " (" + sample["league_code"] + ")",
+                hovertemplate="%{text}<br>index=%{x}<br>position=%{y}<extra></extra>",
+                opacity=0.5,
+            )
+        )
+        fig3.update_layout(
+            xaxis_title="Champagne index",
+            yaxis_title="League position (1 = champion)",
+            yaxis=dict(autorange="reversed"),
+        )
+        st.plotly_chart(fig3, use_container_width=True)
 
 with tab_perf:
     if RESULTS_PATH.exists():
