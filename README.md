@@ -4,13 +4,21 @@ Does a football team's spending on attacking-position transfers predict a rise i
 **Champagne Index** — attacking output per match — the following season? And does a
 high Champagne Index actually mean a team finishes higher in the table?
 
-## Team
+## About this project
 
-| Name | GitHub |
+A personal/portfolio project, built solo across four of my own GitHub accounts as
+deliberate practice for the team-project workflow taught in LUISS's *Computational
+Infrastructures for Data Science* course — same shape (team of 4, public dataset,
+Docker Compose, measured performance) and same git discipline (branches, pull
+requests, review before merge). My actual course team built a different project —
+this one isn't submitted as LUISS coursework.
+
+| Account | Role played |
 |---|---|
-| Ataika | [@Ataika](https://github.com/Ataika) |
-| jacoposcaccianoce | [@jacoposcaccianoce](https://github.com/jacoposcaccianoce) |
-| lilllaz | [@lilllaz](https://github.com/lilllaz) |
+| [@Ataika](https://github.com/Ataika) | Infra: schema, loader, pipeline, Docker Compose, measurements |
+| [@jacoposcaccianoce](https://github.com/jacoposcaccianoce) | README validation, non-technical track |
+| [@nedalozanovska](https://github.com/nedalozanovska) | SQL exploration, non-technical track |
+| [@lilllaz](https://github.com/lilllaz) | Prediction model, technical track |
 
 ## How to run
 
@@ -170,12 +178,14 @@ time grows more slowly, since most of it is fixed per-query overhead.
   investigating whether restricting the fit to first-team (not reserve/youth)
   competitions changes this.
 
-## Who did what
+## Commit log by account
+
+See the **About this project** section above — all four accounts are mine, used to
+practice the branch → PR → review → merge workflow solo.
 
 | | |
 |---|---|
-| Ataika | data, loader, schema, Docker Compose, measurements, README |
-| jacoposcaccianoce | database queries, processing pipeline |
-| lilllaz | dashboard, architecture diagram |
-
-(To be updated with the real commit history once everyone has pushed.)
+| Ataika | data, loader, schema, Docker Compose, measurements, README, match enrichment |
+| jacoposcaccianoce | README validation (Issue #1) |
+| nedalozanovska | SQL exploration (Issue #2) |
+| lilllaz | prediction model (Issue #3) |
