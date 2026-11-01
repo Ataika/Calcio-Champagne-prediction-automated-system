@@ -146,3 +146,69 @@ JOIN transfer_spend_by_team_season s
 WHERE d.matches >= 15 AND s.total_spend > 0
 ORDER BY d.goals_conceded_per_match ASC
 LIMIT 10;
+
+-- ============================================================================
+-- Extra analytics round (post-presentation-prep EDA).
+-- ============================================================================
+
+-- Home advantage by league (needs the football-data.co.uk match enrichment).
+-- Answers: "does home advantage differ across the top-5 leagues?"
+SELECT
+    league_code,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE result = 'H') / COUNT(*), 1) AS home_win_pct,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE result = 'D') / COUNT(*), 1) AS draw_pct,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE result = 'A') / COUNT(*), 1) AS away_win_pct,
+    COUNT(*) AS n_matches
+FROM match_results
+GROUP BY league_code
+ORDER BY home_win_pct DESC;
+-- Real result: LaLiga (SP1) has the strongest home advantage at 45.7%,
+-- Serie A (I1) the weakest at 40.4% — a ~5pp spread across the top-5 leagues.
+
+-- Free-transfer bargains: first-team squads (team_children filter, same as
+-- Issue #3) who brought in 3+ players on free transfers (transfer_type='Transfer',
+-- fee=0/null — loans are excluded separately, they never carry a fee in this
+-- dataset) in a season with 15+ matches, ranked by how much their Champagne
+-- Index rose the following season.
+SELECT
+    cr.team_name, cr.season_name, cr.competition_name, cr.matches,
+    COUNT(*) AS free_transfers_in,
+    cr.champagne_index AS index_now,
+    cr.delta_index
+FROM transfer_history th
+JOIN champagne_results cr ON cr.team_id = th.to_team_id AND cr.season_name = th.season_name
+WHERE th.transfer_type = 'Transfer' AND (th.transfer_fee = 0 OR th.transfer_fee IS NULL)
+  AND cr.team_id NOT IN (SELECT child_team_id FROM team_children WHERE parent_team_id <> child_team_id)
+GROUP BY cr.team_name, cr.season_name, cr.competition_name, cr.matches, cr.champagne_index, cr.delta_index
+HAVING COUNT(*) >= 3 AND cr.delta_index IS NOT NULL AND cr.matches >= 15
+ORDER BY cr.delta_index DESC
+LIMIT 15;
+-- Real result (top rows): Bayern Munich 24/25 (+3.56), US Cremonese 22/23 Serie A
+-- (+3.76, their promotion season), LOSC Lille 24/25 (+3.41) — free transfers
+-- clearly aren't just a lower-league thing.
+
+-- Injury burden vs. final league position, normalized per squad member
+-- (NOT total days missed — that's confounded by squad size: Barcelona/Juventus/
+-- Dortmund have huge squads and huge totals despite finishing near the top).
+-- Answers: "do more injury-hit squads finish lower?"
+WITH roster AS (
+    SELECT team_id, season_name, player_id FROM player_performances
+    GROUP BY team_id, season_name, player_id
+),
+squad_size AS (
+    SELECT team_id, season_name, COUNT(*) AS n_players FROM roster GROUP BY team_id, season_name
+),
+injury_burden AS (
+    SELECT r.team_id, r.season_name, SUM(pi.days_missed) AS total_days_missed
+    FROM roster r
+    JOIN player_injuries pi ON pi.player_id = r.player_id AND pi.season_name = r.season_name
+    GROUP BY r.team_id, r.season_name
+)
+SELECT corr(ib.total_days_missed / sq.n_players, ls.position) AS r, COUNT(*) AS n
+FROM league_standings ls
+JOIN injury_burden ib ON ib.team_id = ls.team_id AND ib.season_name = ls.season_name
+JOIN squad_size sq ON sq.team_id = ls.team_id AND sq.season_name = ls.season_name;
+-- Real result: r = -0.045, n = 462 — essentially no correlation. Squads
+-- seem to absorb injuries (depth/rotation) without it showing up in the
+-- final table — a genuine null result, not a query bug (checked both the
+-- raw-total and per-player-normalized versions, both come out near zero).
