@@ -64,10 +64,19 @@ def load_standings_model() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
+def load_club_clusters() -> pd.DataFrame:
+    try:
+        return pd.read_sql("SELECT * FROM club_style_clusters", get_connection())
+    except Exception:
+        return pd.DataFrame()
+
+
 df = load_results()
 model_df = load_model()
 standings_df = load_standings()
 standings_model_df = load_standings_model()
+clusters_df = load_club_clusters()
 
 st.title("⚽ Calcio Champagne")
 st.caption(
@@ -75,8 +84,8 @@ st.caption(
     "Champagne Index — attacking output per match — the following season?"
 )
 
-tab_ranking, tab_team, tab_model, tab_standings, tab_perf = st.tabs(
-    ["Ranking", "Team trend", "Spend vs. output", "Standings", "Performance"]
+tab_ranking, tab_team, tab_model, tab_standings, tab_styles, tab_perf = st.tabs(
+    ["Ranking", "Team trend", "Spend vs. output", "Standings", "Club styles", "Performance"]
 )
 
 with tab_ranking:
@@ -234,6 +243,41 @@ with tab_standings:
             yaxis=dict(autorange="reversed"),
         )
         st.plotly_chart(fig3, use_container_width=True)
+
+with tab_styles:
+    if clusters_df.empty:
+        st.info(
+            "No cluster data yet. Run `docker compose exec pipeline python "
+            "club_style_clustering.py` and reload this tab."
+        )
+    else:
+        st.caption(
+            "K-Means on 5 features (Champagne Index, spend efficiency, discipline, "
+            "goals conceded/match, clean sheet rate), first-team squads only, "
+            "15+ matches. 'Lower-tier / data-sparse' isn't a real tactical style — "
+            "it's teams in leagues where cards/goals-conceded just aren't tracked."
+        )
+        figc = go.Figure()
+        for name, sub in clusters_df.groupby("cluster_name"):
+            figc.add_trace(go.Scatter(
+                x=sub["spend_efficiency"], y=sub["champagne_index"], mode="markers",
+                name=name, opacity=0.55,
+                text=sub["team_name"] + " " + sub["season_name"],
+                hovertemplate="%{text}<br>spend_eff=%{x:.2f}<br>index=%{y:.2f}<extra></extra>",
+            ))
+        figc.update_layout(
+            xaxis_title="Spend efficiency (index per €M spent)",
+            yaxis_title="Champagne index",
+        )
+        st.plotly_chart(figc, use_container_width=True)
+
+        st.subheader("Cluster profiles (mean values)")
+        profile_cols = ["champagne_index", "spend_efficiency", "discipline_index",
+                         "goals_conceded_per_match", "clean_sheet_rate", "total_spend"]
+        st.dataframe(
+            clusters_df.groupby("cluster_name")[profile_cols].mean().round(2),
+            use_container_width=True,
+        )
 
 with tab_perf:
     if RESULTS_PATH.exists():
