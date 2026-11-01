@@ -136,6 +136,8 @@ with tab_ranking:
         view = view[view["season_name"] == season]
 
     view = view.sort_values("champagne_index", ascending=False)
+    max_idx = view["champagne_index"].max()
+    max_idx = float(max_idx) if pd.notna(max_idx) and max_idx > 0 else 1.0
     st.dataframe(
         view[
             [
@@ -148,9 +150,7 @@ with tab_ranking:
         hide_index=True,
         column_config={
             "champagne_index": st.column_config.ProgressColumn(
-                "Champagne index", min_value=0,
-                max_value=float(view["champagne_index"].max() or 1),
-                format="%.2f",
+                "Champagne index", min_value=0, max_value=max_idx, format="%.2f",
             ),
             "total_spend": st.column_config.NumberColumn("Total spend", format="€%d"),
         },
@@ -166,7 +166,9 @@ with tab_ranking:
                 .sort_values(ascending=False).head(15).index.tolist()
             )
             picked = st.multiselect("Teams to race", top_teams, default=top_teams[:6])
-            race_df = race_pool[race_pool["team_name"].isin(picked)].dropna(subset=["season_key"])
+            race_df = race_pool[race_pool["team_name"].isin(picked)].dropna(
+                subset=["season_key", "champagne_index"]
+            )
             if not race_df.empty and picked:
                 seasons_asc = sorted(race_df["season_name"].unique(), key=lambda s: race_df[race_df["season_name"] == s]["season_key"].iloc[0])
                 x_max = float(race_df["champagne_index"].max()) * 1.1
