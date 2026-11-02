@@ -12,12 +12,14 @@ import json
 import os
 import pathlib
 
+import joblib
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
 import streamlit as st
 
 RESULTS_PATH = pathlib.Path("/results/results.json")
+LAB_MODEL_PATH = pathlib.Path("/models/champagne_rf_model.joblib")
 
 st.set_page_config(page_title="Calcio Champagne", page_icon="⚽", layout="wide")
 
@@ -64,6 +66,13 @@ def load_standings_model() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_resource
+def load_lab_model():
+    if not LAB_MODEL_PATH.exists():
+        return None
+    return joblib.load(LAB_MODEL_PATH)
+
+
 df = load_results()
 model_df = load_model()
 standings_df = load_standings()
@@ -103,8 +112,8 @@ assists per match" really does track with how good a team's season was.
         """
     )
 
-tab_ranking, tab_team, tab_model, tab_standings, tab_perf = st.tabs(
-    ["Ranking", "Team trend", "Spend vs. output", "Standings", "Performance"]
+tab_ranking, tab_team, tab_model, tab_standings, tab_lab, tab_perf = st.tabs(
+    ["Ranking", "Team trend", "Spend vs. output", "Standings", "🧪 Lab", "Performance"]
 )
 
 with tab_ranking:
@@ -262,6 +271,93 @@ with tab_standings:
             yaxis=dict(autorange="reversed"),
         )
         st.plotly_chart(fig3, use_container_width=True)
+
+with tab_lab:
+    lab = load_lab_model()
+    if lab is None:
+        st.info(
+            "No trained model found yet. It's written by the pipeline automatically "
+            "on `docker compose up` — reload this tab once that's finished."
+        )
+    else:
+        st.caption(
+            "Play with a hypothetical team-season and see what the model (the same "
+            "RandomForest from the 'Upgrade the prediction model' work, R²≈0.15 on "
+            "held-out data — a real but modest signal) predicts for next season. "
+            "Not a real forecast, an educational toy: drag the sliders and watch "
+            "the prediction move."
+        )
+
+        prefill_options = ["— blank —"] + sorted(df["team_name"].dropna().unique())
+        prefill_team = st.selectbox("Start from a real team's latest season (optional)", prefill_options)
+
+        ranges = lab["feature_ranges"]
+        if prefill_team != "— blank —":
+            row = df[(df["team_name"] == prefill_team) & (df["is_latest_season"])]
+            row = row.iloc[0] if not row.empty else None
+        else:
+            row = None
+
+        def default_for(col):
+            if row is not None and pd.notna(row.get(col)):
+                return float(row[col])
+            return ranges[col]["median"]
+
+        c1, c2 = st.columns(2)
+        with c1:
+            champagne_index = st.slider(
+                "Current Champagne index", 0.0, max(3.0, ranges["champagne_index"]["max"]),
+                value=min(default_for("champagne_index"), max(3.0, ranges["champagne_index"]["max"])), step=0.05,
+            )
+            total_spend = st.slider(
+                "Total transfer spend (€)", 0, int(max(2e8, ranges["total_spend"]["max"])),
+                value=int(min(default_for("total_spend"), max(2e8, ranges["total_spend"]["max"]))), step=1_000_000,
+            )
+            attacking_spend = st.slider(
+                "...of which on attacking players (€)", 0, int(total_spend) if total_spend > 0 else 1,
+                value=min(int(default_for("attacking_spend")), int(total_spend) if total_spend > 0 else 1),
+                step=500_000,
+            )
+        with c2:
+            squad_avg_age = st.slider(
+                "Squad average age",
+                float(min(16.0, ranges["squad_avg_age"]["min"])),
+                float(max(40.0, ranges["squad_avg_age"]["max"])),
+                value=float(default_for("squad_avg_age")), step=0.5,
+            )
+            market_value_change = st.slider(
+                "Squad market-value change vs. last season (€)",
+                int(min(-5e7, ranges["market_value_change"]["min"])),
+                int(max(5e7, ranges["market_value_change"]["max"])),
+                value=int(default_for("market_value_change")), step=500_000,
+            )
+
+        X = pd.DataFrame([{
+            "champagne_index": champagne_index, "total_spend": total_spend,
+            "attacking_spend": attacking_spend, "squad_avg_age": squad_avg_age,
+            "market_value_change": market_value_change,
+        }])[lab["feature_cols"]]
+        predicted_delta = float(lab["model"].predict(X)[0])
+        predicted_next = champagne_index + predicted_delta
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Predicted Δ next season", f"{predicted_delta:+.2f}")
+        m2.metric("Predicted next-season index", f"{predicted_next:.2f}")
+
+        if not standings_model_df.empty:
+            sm = standings_model_df.iloc[0]
+            if pd.notna(sm.get("slope")) and pd.notna(sm.get("intercept")):
+                approx_position = float(sm["slope"]) * predicted_next + float(sm["intercept"])
+                approx_position = max(1, round(approx_position))
+                m3.metric("Very roughly, league position", f"~{approx_position}")
+                st.caption(
+                    f"Position estimate inverts the Champagne Index ↔ league position "
+                    f"trend (r={sm['r_value']:.3f}) — real position depends on dozens "
+                    "of things this toy doesn't model (fixtures, injuries, luck...). "
+                    "Treat it as a vibe, not a prediction."
+                )
+            else:
+                st.caption("Load the football-data.co.uk match enrichment to unlock a position estimate.")
 
 with tab_perf:
     if RESULTS_PATH.exists():

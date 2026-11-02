@@ -16,6 +16,7 @@ import os
 import re
 import time
 
+import joblib
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
@@ -23,6 +24,8 @@ from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
+
+MODELS_DIR = "/models"
 
 RESULT_COLUMNS = [
     "team_id", "team_name", "season_name", "season_key", "competition_id",
@@ -193,7 +196,28 @@ def fit_ml_model(features, reserve_youth_ids):
     model.fit(X_train, y_train)
     r2 = float(r2_score(y_test, model.predict(X_test)))
     importances = dict(zip(ML_FEATURE_COLUMNS, model.feature_importances_.astype(float)))
-    return r2, len(train), importances
+
+    # Separate model trained on ALL available rows (not just the train split) for
+    # the Lab tab's live predictions — the R^2 above is still measured on the
+    # held-out test split, this one is just for best real-world inference.
+    deploy_model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=42, n_jobs=-1)
+    deploy_model.fit(X, y)
+    feature_ranges = {
+        col: {"min": float(X[col].min()), "median": float(X[col].median()), "max": float(X[col].max())}
+        for col in ML_FEATURE_COLUMNS
+    }
+    return r2, len(train), importances, deploy_model, feature_ranges
+
+
+def save_lab_model(model, feature_ranges):
+    """Persists the fitted RandomForest (not just its score) to a shared volume
+    so the dashboard's Lab tab can load it and predict on arbitrary user input
+    without the app container needing its own copy of the training pipeline."""
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    joblib.dump(
+        {"model": model, "feature_cols": ML_FEATURE_COLUMNS, "feature_ranges": feature_ranges},
+        os.path.join(MODELS_DIR, "champagne_rf_model.joblib"),
+    )
 
 
 def compute_standings(conn, champagne_results):
@@ -256,7 +280,7 @@ def compute_standings(conn, champagne_results):
         slope, intercept, r_value, p_value, _ = stats.linregress(
             sample["champagne_index"].astype(float), sample["position"].astype(float)
         )
-        corr_stats = (float(r_value), float(p_value), len(sample))
+        corr_stats = (float(r_value), float(p_value), len(sample), float(slope), float(intercept))
 
     return enriched[STANDINGS_COLUMNS], corr_stats
 
@@ -284,15 +308,17 @@ def write_standings(conn, standings_df, corr_stats):
                 total_spend NUMERIC
             );
         """)
+        cur.execute("DROP TABLE IF EXISTS champagne_vs_position_model;")
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS champagne_vs_position_model (
+            CREATE TABLE champagne_vs_position_model (
                 r_value NUMERIC,
                 p_value NUMERIC,
                 n_observations INTEGER,
+                slope NUMERIC,
+                intercept NUMERIC,
                 computed_at TIMESTAMP DEFAULT now()
             );
         """)
-        cur.execute("DELETE FROM champagne_vs_position_model;")
     conn.commit()
 
     if standings_df.empty:
@@ -308,11 +334,11 @@ def write_standings(conn, standings_df, corr_stats):
             records,
         )
         if corr_stats:
-            r_value, p_value, n = corr_stats
+            r_value, p_value, n, slope, intercept = corr_stats
             cur.execute(
-                "INSERT INTO champagne_vs_position_model (r_value, p_value, n_observations) "
-                "VALUES (%s, %s, %s)",
-                (r_value, p_value, n),
+                "INSERT INTO champagne_vs_position_model "
+                "(r_value, p_value, n_observations, slope, intercept) VALUES (%s, %s, %s, %s, %s)",
+                (r_value, p_value, n, slope, intercept),
             )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_ls_league_season "
@@ -390,7 +416,7 @@ def write_ml_model(conn, ml_result):
         """)
         cur.execute("DELETE FROM champagne_model_ml;")
         if ml_result:
-            r2, n, importances = ml_result
+            r2, n, importances, _model, _ranges = ml_result
             cur.execute(
                 "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances) "
                 "VALUES (%s, %s, %s)",
@@ -417,20 +443,22 @@ def main():
     ml_result = fit_ml_model(ml_features, reserve_youth_ids)
     write_ml_model(conn, ml_result)
     if ml_result:
-        r2, n_ml, importances = ml_result
+        r2, n_ml, importances, deploy_model, feature_ranges = ml_result
         top_feature = max(importances, key=importances.get)
         print(
             f"[pipeline] RandomForest richer-feature model: test R^2={r2:.3f} n={n_ml} "
             f"top feature={top_feature} ({importances[top_feature]:.3f})",
             flush=True,
         )
+        save_lab_model(deploy_model, feature_ranges)
+        print(f"[pipeline] saved Lab model to {MODELS_DIR}/champagne_rf_model.joblib", flush=True)
     else:
         print("[pipeline] not enough complete rows to fit the RandomForest model, skipping", flush=True)
 
     standings_df, corr_stats = compute_standings(conn, merged)
     write_standings(conn, standings_df, corr_stats)
     if corr_stats:
-        r_value, p_value, n = corr_stats
+        r_value, p_value, n, _slope, _intercept = corr_stats
         print(
             f"[pipeline] champagne_index vs. league position: r={r_value:.3f} "
             f"p={p_value:.4f} n={n}",

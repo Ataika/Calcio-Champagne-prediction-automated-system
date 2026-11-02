@@ -26,6 +26,8 @@ services:
       context: .
       dockerfile: pipeline/Dockerfile
     env_file: .env
+    volumes:
+      - ./models:/models
     depends_on:
       loader:
         condition: service_completed_successfully
@@ -39,6 +41,7 @@ services:
       - "8502:8501"
     volumes:
       - ./measure/results:/results
+      - ./models:/models:ro
     depends_on:
       pipeline:
         condition: service_completed_successfully
