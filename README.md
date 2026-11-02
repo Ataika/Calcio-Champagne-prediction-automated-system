@@ -104,9 +104,22 @@ into total spend and spend specifically on `main_position = 'Attack'` players.
 
 **Prediction**: `pipeline/compute_predictions.py` fits one global linear trend
 (`scipy.stats.linregress`) of *next season's change in Champagne Index* against *this
-season's transfer spend*, across every team-season with at least 5 matches played.
-That trend line is what "predicted next-season index" in the dashboard comes from — a
-simple regression, not a trained ML model.
+season's transfer spend*, across every team-season with at least 5 matches played and
+excluding reserve/youth squads (identified via `team_children`, not mixed in with
+their first team). That trend line is what "predicted next-season index" in the
+dashboard comes from — a simple regression, not a trained ML model.
+
+**Richer model (Issue #3)**: the same pipeline also fits a `RandomForestRegressor`
+predicting next-season Δ Champagne Index from five features — current
+`champagne_index`, `total_spend`, `attacking_spend`, squad average age
+(`player_profiles.date_of_birth`), and the change in the squad's average market value
+vs. the previous season (`player_market_value`) — written to `champagne_model_ml`.
+Excluding reserve/youth squads barely moves the linear fit (r goes from -0.014 to
+-0.018, still no real signal — spend alone just isn't predictive). The richer model
+does meaningfully better: test R² = 0.125 vs. the linear baseline's ~0, with
+`champagne_index` itself as by far the strongest feature (69% importance, i.e. the
+biggest predictor of next season's index is mostly how good this season already was),
+followed by `total_spend` (15%) and `squad_avg_age` (10%).
 
 **League standings** (optional, needs the football-data.co.uk enrichment):
 `compute_standings()` builds a real league table — points, goal difference, final
@@ -173,10 +186,12 @@ time grows more slowly, since most of it is fixed per-query overhead.
   assists per match" is a meaningful proxy for how good a team's season was, even
   though the main dataset has no match results of its own.
 - **Transfer spend vs. next season's Δ Champagne Index** (whole dataset, all
-  competitions, 1960–2025): r ≈ -0.01, not significant. Spending alone does not
-  predict a more attacking team next season — see Issue #3 on GitHub, which is
-  investigating whether restricting the fit to first-team (not reserve/youth)
-  competitions changes this.
+  competitions, 1960–2025): r ≈ -0.014, not significant, and restricting to
+  first-team squads only (excluding reserve/youth teams via `team_children`, see
+  Issue #3) barely moves it to r ≈ -0.018 — still no signal. Spending alone does not
+  predict a more attacking team next season, with or without the reserve/youth
+  teams mixed in. A richer model (RandomForest, five features) does find real
+  signal though: test R² = 0.125 — see **Richer model** above.
 
 ## Commit log by account
 
