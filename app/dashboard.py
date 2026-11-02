@@ -23,6 +23,41 @@ LAB_MODEL_PATH = pathlib.Path("/models/champagne_rf_model.joblib")
 
 st.set_page_config(page_title="Calcio Champagne", page_icon="⚽", layout="wide")
 
+st.markdown(
+    """
+<style>
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.main .block-container { animation: fadeIn 0.4s ease-out; }
+
+div[data-testid="stMetric"] {
+    background: linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.02));
+    border: 1px solid rgba(212,175,55,0.35);
+    border-radius: 12px;
+    padding: 14px 16px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(212,175,55,0.18);
+}
+
+button[data-baseweb="tab"] {
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+button[data-baseweb="tab"]:hover {
+    color: #D4AF37 !important;
+    transform: translateY(-1px);
+}
+
+div[data-testid="stExpander"] {
+    border-radius: 10px;
+    border: 1px solid rgba(212,175,55,0.25) !important;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 @st.cache_resource
 def get_connection():
@@ -138,6 +173,8 @@ with tab_ranking:
         view = view[view["season_name"] == season]
 
     view = view.sort_values("champagne_index", ascending=False)
+    max_idx = view["champagne_index"].max()
+    max_idx = float(max_idx) if pd.notna(max_idx) and max_idx > 0 else 1.0
     st.dataframe(
         view[
             [
@@ -148,7 +185,66 @@ with tab_ranking:
         ].head(50),
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "champagne_index": st.column_config.ProgressColumn(
+                "Champagne index", min_value=0, max_value=max_idx, format="%.2f",
+            ),
+            "total_spend": st.column_config.NumberColumn("Total spend", format="€%d"),
+        },
     )
+
+    with st.expander("🏆 Season-by-season race"):
+        if competition == "All":
+            st.caption("Pick a specific competition above to animate its teams across seasons.")
+        else:
+            race_pool = df[df["competition_name"] == competition]
+            top_teams = (
+                race_pool.groupby("team_name")["champagne_index"].max()
+                .sort_values(ascending=False).head(15).index.tolist()
+            )
+            picked = st.multiselect("Teams to race", top_teams, default=top_teams[:6])
+            race_df = race_pool[race_pool["team_name"].isin(picked)].dropna(
+                subset=["season_key", "champagne_index"]
+            )
+            if not race_df.empty and picked:
+                seasons_asc = sorted(race_df["season_name"].unique(), key=lambda s: race_df[race_df["season_name"] == s]["season_key"].iloc[0])
+                x_max = float(race_df["champagne_index"].max()) * 1.1
+
+                frames = []
+                for s in seasons_asc:
+                    snap = race_df[race_df["season_name"] == s].set_index("team_name")["champagne_index"]
+                    snap = snap.reindex(picked).fillna(0).sort_values()
+                    frames.append(go.Frame(
+                        data=[go.Bar(x=snap.values, y=snap.index, orientation="h")],
+                        name=s,
+                    ))
+
+                first = frames[0].data[0]
+                fig_race = go.Figure(
+                    data=[go.Bar(x=first.x, y=first.y, orientation="h", marker_color="#D4AF37")],
+                    frames=frames,
+                )
+                fig_race.update_layout(
+                    xaxis=dict(range=[0, x_max], title="Champagne index"),
+                    height=420,
+                    updatemenus=[dict(
+                        type="buttons", showactive=False,
+                        buttons=[
+                            dict(label="▶ Play", method="animate",
+                                 args=[None, {"frame": {"duration": 700, "redraw": True},
+                                               "fromcurrent": True, "transition": {"duration": 300}}]),
+                            dict(label="⏸ Pause", method="animate",
+                                 args=[[None], {"frame": {"duration": 0}, "mode": "immediate"}]),
+                        ],
+                    )],
+                    sliders=[dict(
+                        steps=[dict(method="animate", args=[[s], {"frame": {"duration": 300, "redraw": True}}], label=s)
+                               for s in seasons_asc],
+                    )],
+                )
+                st.plotly_chart(fig_race, use_container_width=True)
+            else:
+                st.caption("Pick at least one team.")
 
 with tab_team:
     team_name = st.selectbox("Team", sorted(df["team_name"].dropna().unique()))
