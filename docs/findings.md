@@ -1,9 +1,7 @@
 # Presentation findings
 
 Short, spoken-out-loud findings, each backed by a real number from the dashboard or
-database — not a guess. Two are filled in from numbers already computed by the
-pipeline/benchmark; the rest need one `docker compose up` to pull the actual team
-names out of `sql/exploration.sql` (Issue #2/#6) before the presentation.
+database — not a guess.
 
 1. **The Champagne Index actually means something.** Across the top-5 European
    leagues, 2021–2026 (484 team-seasons with real match data), a team's Champagne
@@ -19,23 +17,28 @@ names out of `sql/exploration.sql` (Issue #2/#6) before the presentation.
    season (see Issue #3 — this might change once reserve/youth competitions are
    filtered out of the fit).
 
-3. **TODO — best value for money.** Run `sql/exploration.sql` Query 3a
-   (`spend_efficiency` sorted DESC) once the stack is up and name the actual
-   top team-season, with its champagne_index and total_spend.
+3. **"Best value for money" is dominated by noise, not a real story.** The naive
+   leaderboard (`sql/exploration.sql` Query 3a, `spend_efficiency` sorted DESC)
+   is topped by tiny-spend outliers: Manchester City's U21 side spent a
+   nominal **€1 total** and still posted a 2.9 Champagne Index, followed by a
+   run of Italian lower-league cup campaigns (AC Prato, Foligno Calcio,
+   Vicenza Calcio) with €50k–250k spend. There's no team here that genuinely
+   "solved" attacking output cheaply at a real, competitive first-team level —
+   this metric needs a minimum-spend and first-team filter (the same idea as
+   Issue #3's reserve/youth exclusion) before a real "smart spenders" claim
+   could be made.
 
-4. **TODO — worst value for money.** Same query, Query 3b (sorted ASC) — the
-   team-season that spent the most for the least extra attacking output.
+4. **"Worst value for money" is mostly zero-output cup runs, not wasted
+   budgets.** The bottom of the same leaderboard (Query 3b) is five single-cup
+   campaigns — mostly 1. FC Kaiserslautern and 1. FC Saarbrücken in the
+   DFB-Pokal and Intertoto-Cup across the 80s/90s/00s — each with a Champagne
+   Index of exactly **0.0** despite real transfer spend (€150k–675k). These
+   are squads that simply didn't score or assist in that one cup competition,
+   not evidence that the transfer money itself was wasted.
 
-5. **TODO — league-level spend pattern.** Run Query 2 (`avg_transfer_fee` per
-   competition) and note whether any one league's spend-per-transfer average
-   stands out from the rest.
-
-## How to fill in the TODOs
-
-```
-docker compose up
-docker compose exec -T db psql -U team -d calcio < sql/exploration.sql
-```
-
-Or open each query in a GUI client (TablePlus/DBeaver, `localhost:5432`, credentials
-in `.env`) and read the actual rows back.
+5. **The Premier League spends more per transfer than anyone else, by a wide
+   margin.** Across 13,754 paid transfers (Query 2), the Premier League's
+   average fee is **€13.7M** — 55% higher than second-place LaLiga (€8.85M),
+   and more than double Ligue 1, Serie A, or the Bundesliga (€5.6M–6.6M each).
+   Total nominal Premier League spend across the full dataset (1960–2025) is
+   also by far the largest of the top-5 leagues at **€188.6B**.
