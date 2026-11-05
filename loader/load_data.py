@@ -147,8 +147,7 @@ def load_matches(conn):
     system works fine without it, this only unlocks the 'Champagne vs. league
     position' comparison in the dashboard."""
     if not os.path.isdir(MATCHES_DIR):
-        print(f"[loader] {MATCHES_DIR} not found, skipping match enrichment (optional)", flush=True)
-        return 0
+        print(f"[loader] {MATCHES_DIR} not found, clearing stored match enrichment (optional)", flush=True)
 
     with conn.cursor() as cur:
         cur.execute("SELECT league_code, source_name, team_id FROM team_name_map;")
@@ -157,6 +156,8 @@ def load_matches(conn):
     rows = []
     unmapped = set()
     invalid = 0
+    fixtures = {}
+    duplicates = 0
     for league_code in MATCH_LEAGUES:
         league_dir = os.path.join(MATCHES_DIR, league_code)
         if not os.path.isdir(league_dir):
@@ -192,6 +193,14 @@ def load_matches(conn):
                     if parsed is None:
                         continue
                     match_date, home_goals, away_goals, result = parsed
+                    fixture = (league_code, season_name, match_date, home_id, away_id)
+                    score = (home_goals, away_goals, result)
+                    if fixture in fixtures:
+                        if fixtures[fixture] != score:
+                            raise ValueError(f"Conflicting scores for {fixture}; existing match data was not replaced.")
+                        duplicates += 1
+                        continue
+                    fixtures[fixture] = score
                     rows.append((
                         league_code, season_name, match_date, home_id, away_id,
                         home_goals, away_goals, result, row.get("Referee") or None,
@@ -202,6 +211,8 @@ def load_matches(conn):
               f"{sorted(unmapped)[:10]}", flush=True)
     if invalid:
         print(f"[loader] WARNING: {invalid} invalid completed-match rows skipped", flush=True)
+    if duplicates:
+        print(f"[loader] {duplicates} duplicate match rows ignored", flush=True)
 
     with conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE match_results;")

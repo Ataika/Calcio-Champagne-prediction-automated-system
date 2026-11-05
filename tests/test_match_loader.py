@@ -1,8 +1,12 @@
 """Malformed enrichment must not invent completed matches or corrupt a COPY."""
 import unittest
+import csv
+import tempfile
 from datetime import date
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from loader.load_data import parse_match_result, season_folder_to_name
+from loader.load_data import load_matches, parse_match_result, season_folder_to_name
 
 
 class MatchParsingTests(unittest.TestCase):
@@ -32,6 +36,52 @@ class MatchParsingTests(unittest.TestCase):
         for filename in ("2025", "2427", "24-25", "notes", ""):
             with self.subTest(filename=filename), self.assertRaises(ValueError):
                 season_folder_to_name(filename)
+
+
+class MatchReplacementTests(unittest.TestCase):
+    def connection(self):
+        conn = MagicMock()
+        conn.cursor.return_value.__enter__.return_value.fetchall.return_value = [
+            ("I1", "Home", 1), ("I1", "Away", 2),
+        ]
+        return conn
+
+    def write_matches(self, base, rows):
+        directory = Path(base) / "I1"
+        directory.mkdir()
+        with (directory / "2425.csv").open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"])
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_missing_optional_directory_clears_old_rows(self):
+        conn = self.connection()
+        with tempfile.TemporaryDirectory() as base, patch("loader.load_data.MATCHES_DIR", str(Path(base) / "missing")), \
+                patch("loader.load_data.execute_values") as insert:
+            self.assertEqual(load_matches(conn), 0)
+        conn.cursor.return_value.__enter__.return_value.execute.assert_any_call("TRUNCATE TABLE match_results;")
+        conn.commit.assert_called_once()
+        insert.assert_not_called()
+
+    def test_duplicate_fixture_is_imported_once(self):
+        row = dict(Date="02/02/2025", HomeTeam="Home", AwayTeam="Away", FTHG="2", FTAG="1", FTR="H")
+        conn = self.connection()
+        with tempfile.TemporaryDirectory() as base:
+            self.write_matches(base, [row, row])
+            with patch("loader.load_data.MATCHES_DIR", base), patch("loader.load_data.execute_values") as insert:
+                self.assertEqual(load_matches(conn), 1)
+        self.assertEqual(len(insert.call_args.args[2]), 1)
+
+    def test_conflicting_fixture_preserves_stored_matches(self):
+        row = dict(Date="02/02/2025", HomeTeam="Home", AwayTeam="Away", FTHG="2", FTAG="1", FTR="H")
+        conn = self.connection()
+        with tempfile.TemporaryDirectory() as base:
+            self.write_matches(base, [row, dict(row, FTHG="3")])
+            with patch("loader.load_data.MATCHES_DIR", base), self.assertRaisesRegex(ValueError, "Conflicting scores"):
+                load_matches(conn)
+        statements = [call.args[0] for call in conn.cursor.return_value.__enter__.return_value.execute.call_args_list]
+        self.assertNotIn("TRUNCATE TABLE match_results;", statements)
+        conn.commit.assert_not_called()
 
 
 if __name__ == "__main__":
