@@ -8,7 +8,14 @@ STORE: this script creates the schema (sql/schema.sql) and bulk-loads each CSV w
 import csv
 import os
 import time
-from datetime import datetime
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+try:
+    from .get_data import ensure_dataset
+except ImportError:
+    from get_data import ensure_dataset
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -141,10 +148,16 @@ def load_matches(conn):
                         unmapped.add((league_code, away))
                         continue
                     date_str = row.get("Date", "")
-                    try:
-                        match_date = datetime.strptime(date_str, "%d/%m/%Y").date()
-                    except ValueError:
-                        match_date = None
+                    match_date = None
+                    for date_format in ("%d/%m/%Y", "%d/%m/%y"):
+                        try:
+                            match_date = datetime.strptime(date_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
+                    # Future/unplayed fixtures must not count as 0–0 draws.
+                    if row.get("FTR") not in {"H", "D", "A"} or not row.get("FTHG") or not row.get("FTAG"):
+                        continue
                     rows.append((
                         league_code, season_name, match_date, home_id, away_id,
                         row.get("FTHG") or None, row.get("FTAG") or None,
@@ -157,13 +170,14 @@ def load_matches(conn):
 
     with conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE match_results;")
-        execute_values(
-            cur,
-            "INSERT INTO match_results "
-            "(league_code, season_name, match_date, home_team_id, away_team_id, "
-            " home_goals, away_goals, result, referee) VALUES %s",
-            rows,
-        )
+        if rows:
+            execute_values(
+                cur,
+                "INSERT INTO match_results "
+                "(league_code, season_name, match_date, home_team_id, away_team_id, "
+                " home_goals, away_goals, result, referee) VALUES %s",
+                rows,
+            )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_mr_season "
             "ON match_results (league_code, season_name);"
@@ -175,11 +189,15 @@ def load_matches(conn):
 
 
 def main():
+    started = time.perf_counter()
+    ensure_dataset(DATA_DIR)
+    download_elapsed = time.perf_counter() - started
     conn = connect()
     run_schema(conn)
     run_team_name_map(conn)
 
     total_rows = 0
+    table_times = []
     t0 = time.perf_counter()
     for table, csv_relpath in TABLES:
         t_table = time.perf_counter()
@@ -188,6 +206,7 @@ def main():
             cur.execute(f"SELECT COUNT(*) FROM {table};")
             rows = cur.fetchone()[0]
         total_rows += rows
+        table_times.append({"table": table, "rows": rows, "seconds": time.perf_counter() - t_table})
         print(
             f"[loader] {table}: {rows:,} rows in {time.perf_counter() - t_table:.1f}s",
             flush=True,
@@ -198,11 +217,15 @@ def main():
     with conn.cursor() as cur:
         for statement in INDEXES:
             cur.execute(statement)
+        # COPY/TRUNCATE changes distributions; do not wait for autovacuum before
+        # the immediately following aggregation pipeline chooses its plans.
+        cur.execute("ANALYZE;")
     conn.commit()
     index_elapsed = time.perf_counter() - t_idx
 
     t_matches = time.perf_counter()
     n_matches = load_matches(conn)
+    matches_elapsed = time.perf_counter() - t_matches
     if n_matches:
         print(
             f"[loader] match_results: {n_matches:,} rows in "
@@ -216,6 +239,13 @@ def main():
         flush=True,
     )
     conn.close()
+    results = Path(os.getenv("RESULTS_DIR", "/results"))
+    if results.is_dir():
+        payload = {"measured_at": datetime.now(timezone.utc).isoformat(), "download_seconds": download_elapsed,
+                   "load_seconds": load_elapsed, "index_seconds": index_elapsed,
+                   "matches_seconds": matches_elapsed, "full_seconds": time.perf_counter() - started,
+                   "tables": table_times, "total_rows": total_rows}
+        (results / "loader.json").write_text(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":

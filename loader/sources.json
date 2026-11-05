@@ -1,0 +1,226 @@
+{
+  "source": "https://github.com/salimt/football-datasets",
+  "revision": "da9227e1f42baf74561324290dbf1ad2e3c00edd",
+  "verified_on": "2026-11-04",
+  "licence": "No explicit licence file found at this revision; do not assert an open licence without upstream clarification.",
+  "files": [
+    {
+      "table": "player_injuries",
+      "path": "player_injuries/player_injuries.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_injuries/player_injuries.csv",
+      "sha256": "fab7edd70cd4be43c682172a3d7ac8c63dc8e119cd2c90ec2acd8a8f801bf192",
+      "bytes": 8051385,
+      "header": [
+        "player_id",
+        "season_name",
+        "injury_reason",
+        "from_date",
+        "end_date",
+        "days_missed",
+        "games_missed"
+      ]
+    },
+    {
+      "table": "player_latest_market_value",
+      "path": "player_latest_market_value/player_latest_market_value.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_latest_market_value/player_latest_market_value.csv",
+      "sha256": "d3dd61797538d19deb13553841bb3025acb1814f96b4e2c2ef1a58ad5f3ba523",
+      "bytes": 1679013,
+      "header": [
+        "player_id",
+        "date_unix",
+        "value"
+      ]
+    },
+    {
+      "table": "player_market_value",
+      "path": "player_market_value/player_market_value.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_market_value/player_market_value.csv",
+      "sha256": "e9e1868c883f0f40559127a407f5755c6a7f2e1ded1b4cec842d9185c4edb984",
+      "bytes": 23873747,
+      "header": [
+        "player_id",
+        "date_unix",
+        "value"
+      ]
+    },
+    {
+      "table": "player_national_performances",
+      "path": "player_national_performances/player_national_performances.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_national_performances/player_national_performances.csv",
+      "sha256": "6eebe909cb0ddca868f510aafaf704d4945311ed10d66204473843fcc74c20a3",
+      "bytes": 5074980,
+      "header": [
+        "player_id",
+        "team_id",
+        "matches",
+        "goals",
+        "shirt_number",
+        "debut",
+        "coach_id",
+        "debut_game_id",
+        "career_state"
+      ]
+    },
+    {
+      "table": "player_performances",
+      "path": "player_performances/player_performances.csv",
+      "url": "https://media.githubusercontent.com/media/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_performances/player_performances.csv",
+      "sha256": "21eda6556654478fe986de8972d3b94aea6551ebcd74d5eb153b65edb53d132b",
+      "bytes": 157647289,
+      "header": [
+        "player_id",
+        "season_name",
+        "competition_id",
+        "competition_name",
+        "team_id",
+        "team_name",
+        "nb_in_group",
+        "nb_on_pitch",
+        "goals",
+        "assists",
+        "own_goals",
+        "subed_in",
+        "subed_out",
+        "yellow_cards",
+        "second_yellow_cards",
+        "direct_red_cards",
+        "penalty_goals",
+        "minutes_played",
+        "goals_conceded",
+        "clean_sheets"
+      ]
+    },
+    {
+      "table": "player_profiles",
+      "path": "player_profiles/player_profiles.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_profiles/player_profiles.csv",
+      "sha256": "7ef9afbacf97577d099f21a0ef0ea0d46381bd4806a119f095b9562762a20096",
+      "bytes": 26380409,
+      "header": [
+        "player_id",
+        "player_slug",
+        "player_name",
+        "player_image_url",
+        "name_in_home_country",
+        "date_of_birth",
+        "place_of_birth",
+        "country_of_birth",
+        "height",
+        "citizenship",
+        "is_eu",
+        "position",
+        "main_position",
+        "foot",
+        "current_club_id",
+        "current_club_name",
+        "joined",
+        "contract_expires",
+        "outfitter",
+        "social_media_url",
+        "player_agent_id",
+        "player_agent_name",
+        "contract_option",
+        "date_of_last_contract_extension",
+        "on_loan_from_club_id",
+        "on_loan_from_club_name",
+        "contract_there_expires",
+        "second_club_url",
+        "second_club_name",
+        "third_club_url",
+        "third_club_name",
+        "fourth_club_url",
+        "fourth_club_name",
+        "date_of_death"
+      ]
+    },
+    {
+      "table": "player_teammates_played_with",
+      "path": "player_teammates_played_with/player_teammates_played_with.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/player_teammates_played_with/player_teammates_played_with.csv",
+      "sha256": "6932dab745dc1c957e3d53e72d94cc4e42f61145dbe24889804bb374fe9f4fd4",
+      "bytes": 47705635,
+      "header": [
+        "player_id",
+        "teammate_player_id",
+        "teammate_player_name",
+        "ppg_played_with",
+        "joint_goal_participation",
+        "minutes_played_with"
+      ]
+    },
+    {
+      "table": "team_children",
+      "path": "team_children/team_children.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_children/team_children.csv",
+      "sha256": "812c8125437aa0b5e2b66bbd74c22d82597312be73a195db2a3c68e78480a400",
+      "bytes": 510791,
+      "header": [
+        "parent_team_id",
+        "parent_team_name",
+        "child_team_id",
+        "child_team_name",
+        "_last_modified_at"
+      ]
+    },
+    {
+      "table": "team_competitions_seasons",
+      "path": "team_competitions_seasons/team_competitions_seasons.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_competitions_seasons/team_competitions_seasons.csv",
+      "sha256": "83f06c8108e87d74ebccd7d02df9b7a5fe5769bbc7004771af64230b1eff6319",
+      "bytes": 11032370,
+      "header": [
+        "club_id",
+        "team_name",
+        "season_id",
+        "competition_name",
+        "competition_id",
+        "club_division",
+        "_last_modified_at"
+      ],
+      "normalize": true,
+      "output_sha256": "c7db9b7d56aaf5dce8e6be26b54d25963e7d8514d553d07a583b619b047bd9e3",
+      "legacy_local_sha256": "397d54a36a6e11c011c43b2f82fbc8fcbb4252fc6891c5def1bf2b6c385a2f55"
+    },
+    {
+      "table": "team_details",
+      "path": "team_details/team_details.csv",
+      "url": "https://raw.githubusercontent.com/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/team_details/team_details.csv",
+      "sha256": "e9096583fe01b3ec0907298e9af703c4cef816f39a6aa211594484d68f84b62c",
+      "bytes": 609556,
+      "header": [
+        "club_id",
+        "club_slug",
+        "club_name",
+        "logo_url",
+        "country_name",
+        "season_id",
+        "competition_id",
+        "competition_slug",
+        "competition_name",
+        "club_division",
+        "source_url",
+        "_last_modified_at"
+      ]
+    },
+    {
+      "table": "transfer_history",
+      "path": "transfer_history/transfer_history.csv",
+      "url": "https://media.githubusercontent.com/media/salimt/football-datasets/da9227e1f42baf74561324290dbf1ad2e3c00edd/datalake/transfermarkt/transfer_history/transfer_history.csv",
+      "sha256": "5c602e631654e2f25a646d88a47bf7070e386f993103c2605aef91976ed0be65",
+      "bytes": 81069349,
+      "header": [
+        "player_id",
+        "season_name",
+        "transfer_date",
+        "from_team_id",
+        "from_team_name",
+        "to_team_id",
+        "to_team_name",
+        "transfer_type",
+        "value_at_transfer",
+        "transfer_fee"
+      ]
+    }
+  ]
+}

@@ -15,10 +15,10 @@
 CREATE OR REPLACE VIEW champagne_index_by_team_season AS
 SELECT
     team_id,
-    team_name,
+    MAX(team_name) AS team_name,
     season_name,
     competition_id,
-    competition_name,
+    MAX(competition_name) AS competition_name,
     SUM(goals) AS total_goals,
     SUM(assists) AS total_assists,
     MAX(nb_in_group) AS matches,
@@ -27,7 +27,7 @@ SELECT
         2
     ) AS champagne_index
 FROM player_performances
-GROUP BY team_id, team_name, season_name, competition_id, competition_name;
+GROUP BY team_id, season_name, competition_id;
 
 CREATE OR REPLACE VIEW transfer_spend_by_team_season AS
 SELECT
