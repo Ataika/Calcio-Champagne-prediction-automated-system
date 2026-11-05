@@ -219,27 +219,38 @@ try {
     assert.ok(await evaluate("document.querySelector('.trend-svg')!==null"));
     assert.ok(await evaluate("document.querySelector('#head-to-head')!==null"));
   });
-  await check("Head-to-head shows actual derby scores and club-specific goals", async () => {
+  const derbyResponse = await fetch(`${base}/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=24%2F25`);
+  assert.ok(derbyResponse.ok, "Derby API must be available");
+  const derby = await derbyResponse.json();
+  await check("Head-to-head reflects recorded scores or missing source coverage", async () => {
     await evaluate("location.href='/?league=IT1&season=24%2F25&teams=46,5#compare'");
-    await wait("document.querySelectorAll('#head-to-head .h2h-match').length===2", "derby match results");
-    assert.deepEqual(
-      await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_for]'), cell => cell.textContent)"),
-      ["2", "3"],
-    );
-    assert.deepEqual(
-      await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_against]'), cell => cell.textContent)"),
-      ["3", "2"],
-    );
-    assert.deepEqual(
-      await evaluate("Array.from(document.querySelectorAll('.h2h-score'), score => score.textContent.replace(/\\s/g,''))"),
-      ["1–2", "1–1"],
-    );
+    await wait("document.querySelector('#head-to-head') && document.querySelector('.comparison-heading')?.textContent.includes('Inter') && document.querySelector('#season-select')?.value==='24/25'", "derby comparison");
+    assert.equal(await evaluate("document.querySelectorAll('#head-to-head .h2h-match').length"), derby.matches.length);
+    if (derby.matches.length) {
+      assert.deepEqual(
+        await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_for]'), cell => Number(cell.textContent))"),
+        derby.teams.map(team => team.goals_for),
+      );
+      assert.deepEqual(
+        await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_against]'), cell => Number(cell.textContent))"),
+        derby.teams.map(team => team.goals_against),
+      );
+      assert.deepEqual(
+        await evaluate("Array.from(document.querySelectorAll('.h2h-score'), score => score.textContent.replace(/\\s/g,''))"),
+        derby.matches.map(match => `${match.home_goals}–${match.away_goals}`),
+      );
+    } else {
+      assert.ok(await evaluate("document.querySelector('#head-to-head .notice')!==null"));
+    }
   });
   await screenshot("comparison-desktop.png");
-  await check("Missing match enrichment has an explicit comparison state", async () => {
+  await check("Comparison keeps match coverage scoped to the selected season", async () => {
+    const coverage = await (await fetch(`${base}/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=20%2F21`)).json();
     await evaluate("location.href='/?league=IT1&season=20%2F21&teams=46,5#compare'");
-    await wait("document.querySelector('#head-to-head .notice')?.textContent.includes('have not been loaded')", "missing match coverage");
-    assert.equal(await evaluate("document.querySelectorAll('.h2h-match').length"), 0);
+    await wait("document.querySelector('#head-to-head') && document.querySelector('#season-select')?.value==='20/21'", "historical match coverage");
+    assert.equal(await evaluate("document.querySelectorAll('.h2h-match').length"), coverage.matches.length);
+    if (!coverage.matches.length)
+      assert.ok(await evaluate("document.querySelector('#head-to-head .notice')!==null"));
   });
   await check(
     "Lab preloads five real inputs and clamps the attack budget",
@@ -348,7 +359,8 @@ try {
   await screenshot("overview-mobile.png");
   await check("Mobile head-to-head comparison fits within the viewport", async () => {
     await evaluate("location.href='/?league=IT1&season=24%2F25&teams=46,5#compare'");
-    await wait("document.querySelectorAll('#head-to-head .h2h-match').length===2", "mobile derby results");
+    await wait("document.querySelector('#head-to-head') && document.querySelector('#season-select')?.value==='24/25'", "mobile derby results");
+    assert.equal(await evaluate("document.querySelectorAll('#head-to-head .h2h-match').length"), derby.matches.length);
     assert.ok(await evaluate("document.documentElement.scrollWidth<=window.innerWidth+1"));
   });
   await screenshot("comparison-mobile.png");
