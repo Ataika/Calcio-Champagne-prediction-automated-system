@@ -21,3 +21,6 @@ venv/
 
 # OS
 .DS_Store
+
+# Local QA screenshots and reports
+artifacts/

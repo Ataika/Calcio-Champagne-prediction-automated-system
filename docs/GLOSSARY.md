@@ -59,13 +59,14 @@ instead of the '23/24' format — the two need explicit conversion to join
 **is_latest_season** — boolean flag per team-row: is this that team's most
 recent season in the dataset. Used by the dashboard's Ranking tab default view.
 
-## Tables this project writes (not in the raw Kaggle data)
+## Tables this project writes (not in the raw source data)
 
 | Table | Written by | What's in it |
 |---|---|---|
 | `champagne_results` | `pipeline/compute_predictions.py` | Champagne Index + spend + the linear model's prediction, one row per team-season-competition |
 | `champagne_model` | same | the single fitted linear trend (slope/intercept/r/p) spend→delta_index |
-| `champagne_model_ml` | same | RandomForest test R² + feature importances (JSON) — the richer model, Issue #3 |
+| `champagne_model_ml` | same | Chronological holdout R², feature importances, MAE / zero-change baseline and split metadata |
+| `lab_team_features` | same | Five real model inputs by exact club-season-competition for scenario prefill |
 | `league_standings` | same | real league table built from `match_results`, only populated if the optional match enrichment was loaded |
 | `champagne_vs_position_model` | same | r/p/n for Champagne Index vs. real league position |
 | `transfer_fee_model` | `pipeline/transfer_fee_model.py` | GradientBoosting test R² + feature importances for predicting `transfer_fee` |
@@ -82,7 +83,7 @@ never assume "cluster 2 is always the big spenders."
 - **Mid-table grinders** — moderate spend, moderate everything
 - **Big-spending elite** — highest spend, highest index, real match data
 
-## Raw dataset tables (Kaggle, Transfermarkt)
+## Raw dataset tables (pinned Transfermarkt snapshot)
 
 | Table | Grain | Notable columns |
 |---|---|---|
@@ -101,6 +102,6 @@ never assume "cluster 2 is always the big spenders."
 
 **football-data.co.uk enrichment** — optional CSVs with real match results
 (home/away goals, result, referee) for the top-5 European leagues, 2021-2026.
-Not part of the main Kaggle archive. Unlocks `league_standings`, the
+Not part of the main Transfermarkt snapshot. Unlocks `league_standings`, the
 Standings dashboard tab, and the home-advantage/injury-burden SQL queries.
 See README's **Data** section for the download/folder layout.

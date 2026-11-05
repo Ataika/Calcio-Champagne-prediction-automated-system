@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Calcio Champagne — API reference</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" href="/static/favicon.svg" />
+  </head>
+  <body>
+    <div class="edition">
+      <span>Calcio Champagne / Data reference</span
+      ><span>Same-origin · Read-only data</span>
+    </div>
+    <main>
+      <a class="back-link" href="/">← Back to the journal</a>
+      <section class="hero hero-small">
+        <div>
+          <span class="eyebrow">API / Version 2.0</span>
+          <h1>The data <em>contract.</em></h1>
+          <p class="hero-copy">
+            Bounded, validated reads of computed outputs. No raw player data or
+            database write endpoint.
+          </p>
+        </div>
+        <a class="button" href="/api/openapi.json">OpenAPI schema ↗</a>
+      </section>
+      <div class="data-table-wrap check-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Endpoint</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>GET</td>
+              <td><a href="/api/health">/api/health ↗</a></td>
+              <td>Database/output readiness and saved model presence.</td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td><a href="/api/meta">/api/meta ↗</a></td>
+              <td>
+                Supported leagues, season coverage, defaults and model summary.
+              </td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td>
+                <a href="/api/season?competition=IT1&amp;season=24%2F25"
+                  >/api/season ↗</a
+                >
+              </td>
+              <td>
+                League-season rows; same-sample correlations. Parameters:
+                competition, season, min_matches (5–38; default 15).
+              </td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td>
+                <a href="/api/analysis?competition=IT1&amp;season=24%2F25"
+                  >/api/analysis ↗</a
+                >
+              </td>
+              <td>
+                Five-season window of valid next-season changes and its own
+                fitted line.
+              </td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td>
+                <a href="/api/clubs/46?competition=IT1&amp;season=24%2F25"
+                  >/api/clubs/{team_id} ↗</a
+                >
+              </td>
+              <td>Club profile and same-competition history.</td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td>
+                <a
+                  href="/api/lab/config?team_id=46&amp;competition=IT1&amp;season=24%2F25"
+                  >/api/lab/config ↗</a
+                >
+              </td>
+              <td>
+                Real five-feature club-season inputs, missingness, observed
+                ranges and evaluation protocol.
+              </td>
+            </tr>
+            <tr>
+              <td>POST</td>
+              <td>/api/lab/predict</td>
+              <td>
+                Saved-model scenario inference. Finite numbers only; attacking
+                spend cannot exceed total spend.
+              </td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td>
+                <a href="/api/export?competition=IT1&amp;season=24%2F25"
+                  >/api/export ↗</a
+                >
+              </td>
+              <td>Filtered CSV export with spreadsheet-formula protection.</td>
+            </tr>
+            <tr>
+              <td>GET</td>
+              <td><a href="/api/project">/api/project ↗</a></td>
+              <td>
+                Evaluation, source-table estimates and measured infrastructure
+                artifact.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <section class="project-section">
+        <h2>Try a scenario.</h2>
+        <p>
+          All amounts are in euros. The returned change is a model response, not
+          a causal spending estimate.
+        </p>
+        <pre class="code-block">
+curl -X POST http://localhost:8502/api/lab/predict \
+  -H 'Content-Type: application/json' \
+  -d '{"champagne_index":3,"total_spend":50000000,"attacking_spend":20000000,"squad_avg_age":25,"market_value_change":1000000}'</pre
+        >
+        <p>
+          Competition IDs: IT1 (Serie A), GB1 (Premier League), ES1 (LaLiga), L1
+          (Bundesliga), FR1 (Ligue 1). Season format: 24/25. Invalid input
+          returns 422; unavailable data/model returns 503. The OpenAPI JSON
+          documents the full validation bounds.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

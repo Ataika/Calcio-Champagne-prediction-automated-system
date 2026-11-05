@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#752d40" />
+    <meta
+      name="description"
+      content="What does a transfer budget buy? Explore attacking football, compare clubs, and test a season scenario with Calcio Champagne."
+    />
+    <title>Calcio Champagne — The price of beautiful football</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css?v=2" />
+    <script src="/static/app.js?v=2" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="edition">
+      <span>An independent football data journal</span
+      ><span>European football · A season at a time</span>
+    </div>
+    <header class="masthead">
+      <a class="brand" href="#overview" aria-label="Calcio Champagne home"
+        ><svg class="brand-ball" viewBox="0 0 48 48" aria-hidden="true">
+          <circle cx="24" cy="24" r="21" />
+          <path
+            d="m24 14 9 7-4 11H19l-4-11Zm0 0V3m9 18 11-4M29 32l8 9M19 32l-8 9M15 21 4 17"
+          /></svg
+        ><span
+          >Calcio <em>Champagne</em
+          ><small>THE BEAUTIFUL GAME, BY THE NUMBERS.</small></span
+        ></a
+      >
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#overview" data-view="overview">Overview</a
+        ><a href="#clubs" data-view="clubs">Clubs</a
+        ><a href="#lab" data-view="lab">The Lab <span class="nav-dot"></span></a
+        ><a href="#project" data-view="project">The project</a>
+      </nav>
+      <button class="text-button index-help" data-action="methodology">
+        What is the index? <span aria-hidden="true">↗</span>
+      </button>
+    </header>
+    <main id="main" tabindex="-1">
+      <div id="app" aria-busy="true">
+        <div class="loading-state">
+          <span class="loading-ball"></span>
+          <p>Opening the season book…</p>
+        </div>
+      </div>
+    </main>
+    <footer class="site-footer">
+      <div class="footer-brand">
+        Calcio <em>Champagne</em
+        ><span>Football asks the questions. Data keeps us honest.</span>
+      </div>
+      <div>
+        Transfermarkt data · salimt/football-datasets · Match enrichment:
+        football-data.co.uk<br /><a href="#project"
+          >Sources, methods & infrastructure</a
+        ><span class="footer-divider">/</span
+        ><a
+          href="https://github.com/Ataika/Calcio-Champagne-prediction-automated-system"
+          target="_blank"
+          rel="noopener noreferrer"
+          >View source ↗</a
+        >
+      </div>
+    </footer>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <dialog id="method-dialog" aria-labelledby="method-title">
+      <button
+        class="dialog-close"
+        data-action="close-dialog"
+        aria-label="Close explanation"
+      >
+        ×</button
+      ><span class="eyebrow">The metric, explained</span>
+      <h2 id="method-title">A little more<br /><em>attacking football.</em></h2>
+      <div class="formula">
+        Champagne Index <span>=</span> (goals + assists) ÷ matches
+      </div>
+      <p>
+        The project’s name for a club’s recorded attacking output per match, in
+        one competition and one season. A goal with an assist contributes twice:
+        this is an attacking-output proxy, not goals scored, xG or an official
+        football rating.
+      </p>
+      <p>
+        The match denominator comes from Transfermarkt’s
+        <code>MAX(nb_in_group)</code>, a team-season proxy. It can differ
+        slightly from the actual fixture count. Completed league seasons give a
+        more meaningful comparison than one-match cup campaigns.
+      </p>
+      <p>
+        Spending is recorded incoming transfer fees across the whole
+        club-season. Zero can mean free, a loan, or an undisclosed fee. The
+        index and spending describe different aspects of a season; association
+        does not establish causation.
+      </p>
+      <a class="button button-dark" href="#project" data-action="close-dialog"
+        >Explore the methodology <span>↗</span></a
+      >
+    </dialog>
+    <noscript
+      ><p class="notice">
+        JavaScript is required for the interactive charts. The JSON API is
+        available at <a href="/api/meta">/api/meta</a>.
+      </p></noscript
+    >
+  </body>
+</html>
