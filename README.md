@@ -119,6 +119,13 @@ python3 scripts/check_live.py
 node scripts/browser_check.mjs
 ```
 
+Live and browser checks accept a primary-data setup without optional match CSVs.
+They verify head-to-head totals when meetings exist and an explicit coverage
+message otherwise. Acquisition tests use fake HTTP responses and exercise
+interrupted downloads, checksum/header failures, normalization and offline reuse.
+`/api/health` returns 503 for missing output tables or empty results and reports
+saved-model availability separately.
+
 ## Data
 
 [Public source and pinned revision](https://github.com/salimt/football-datasets/tree/da9227e1f42baf74561324290dbf1ad2e3c00edd):
@@ -229,8 +236,8 @@ existing Git history and are used for both author and committer in the new serie
 
 ### Balanced commit series
 
-The November audit and head-to-head update on `codex/calcio-editorial-audit`
-contains **six commits after baseline `6f34edb`: two per work group**.
+The original November audit and head-to-head update, ending at `b8d0d0a`, contains
+**six commits after baseline `6f34edb`: two per work group**.
 
 | Account | Implementation commit | Follow-up commit | Count |
 | --- | --- | --- | ---: |
@@ -241,10 +248,28 @@ contains **six commits after baseline `6f34edb`: two per work group**.
 Verify the allocation from the branch checkout:
 
 ```bash
-git shortlog -sne 6f34edb..HEAD
+git shortlog -sne 6f34edb..b8d0d0a
 ```
 
-This count applies to the new series; older project history is preserved.
+### Smaller follow-up tasks
+
+The next six changes are independently reviewable tasks, two per work group:
+
+| Account | Task 1 | Task 2 | New commits |
+| --- | --- | --- | ---: |
+| nedalozanovska | Validate completed match dates, scores and season filenames | Clear stale optional results and reject conflicting duplicate fixtures | 2 |
+| lilllaz | Verify safe downloads, checksums, normalization and offline reuse | Make live/browser verification work with optional match enrichment | 2 |
+| jacoposcaccianoce | Check all required output tables and nonempty results for readiness | Document acceptance checks, small work packages and remaining submission steps | 2 |
+
+[Acceptance checks and the remaining submission steps](docs/WORK_PACKAGES.md)
+describe what each task delivers. The combined update after `6f34edb` has
+**12 commits, four per persona**; earlier project history is preserved.
+
+```bash
+git shortlog -sne b8d0d0a..HEAD  # six smaller follow-up commits
+git shortlog -sne 6f34edb..HEAD  # twelve commits across both series
+```
+
 GitHub authentication controls permission to push. The author/committer emails
 above determine commit attribution, independently of the browser sign-in account.
 

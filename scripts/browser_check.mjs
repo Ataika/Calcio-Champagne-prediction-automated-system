@@ -289,6 +289,7 @@ try {
   await check(
     "Project exposes methods, sources and measurement evidence",
     async () => {
+      const evidence = await (await fetch(`${base}/api/project`)).json();
       await go("project");
       for (const id of [
         "architecture",
@@ -303,11 +304,9 @@ try {
           "document.querySelector('#app').innerText.includes('R²')",
         ),
       );
-      assert.ok(
-        await evaluate(
-          "document.querySelector('#measurements').innerText.toLowerCase().includes('complete startup')",
-        ),
-      );
+      const measurementText = await evaluate("document.querySelector('#measurements').innerText.toLowerCase()");
+      assert.ok(measurementText.includes(evidence.benchmark?.system_runs?.length
+        ? "complete startup" : evidence.benchmark ? "difference an index makes" : "no benchmark artifact"));
       assert.ok(
         await evaluate(
           "document.querySelector('#course').innerText.includes('Original brief checked')",

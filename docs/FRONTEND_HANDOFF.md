@@ -33,7 +33,7 @@ visible as disabled options with a partial label.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/health` | Database/output readiness and model presence |
+| `GET /api/health` | Required output tables and nonempty results; 503 when incomplete; saved-model presence reported separately |
 | `GET /api/meta` | Five leagues, sorted season coverage, defaults, model summary |
 | `GET /api/season?competition=IT1&season=24/25&min_matches=15` | Bounded season rows, same-sample descriptive correlations |
 | `GET /api/analysis?competition=IT1&season=24/25` | Five-season input window, valid next-season deltas, fit for that displayed sample; separately labeled global model |
@@ -47,6 +47,10 @@ visible as disabled options with a partial label.
 Interactive OpenAPI docs are at `/api/docs`. Database queries bind user values;
 season and league filters are validated. The connection defaults to read-only,
 and raw player tables are never exposed. Numeric missing values are null.
+
+Health JSON includes `ready`, `missing_tables`, `has_results` and
+`model_available`. Required tables are `champagne_results`, `league_standings`,
+`lab_team_features` and `match_results`; an empty optional match table is valid.
 
 ## Design and QA
 

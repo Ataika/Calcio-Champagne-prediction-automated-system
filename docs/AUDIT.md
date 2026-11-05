@@ -108,5 +108,20 @@ Executed validation: **16 regression tests, 16 live API/data checks and 15 brows
 checks passed**. The Inter/Milan 24/25 example matches the prepared source's 1–2
 and 1–1 fixtures and 2–3 aggregate goals. Checks include reversed club order,
 invalid/same/out-of-scope clubs, missing enrichment and the 390px comparison.
-README records the six-commit update after `6f34edb`, with two commits per persona,
+README records the original six-commit update `6f34edb..b8d0d0a`, with two commits per persona,
 their exact Git emails and the distinction between authorship and push access.
+
+## 5 November 2026 — smaller completion tasks
+
+Six additional work packages address match import validation, duplicate/stale
+enrichment, safe acquisition, optional-data verification, application readiness
+and documented acceptance checks. See [WORK_PACKAGES.md](WORK_PACKAGES.md) for
+their scope and remaining external submission steps.
+
+The full stack was rebuilt and run against the prepared sources: 5,743,186
+primary rows and 8,908 completed matches were retained. App and database health
+checks pass; loader and pipeline exit successfully. **37 regression tests,
+16 live API/data checks and 15 browser checks passed**. Browser checks cover
+desktop and 390px layouts, source-dependent meeting counts and missing coverage.
+Acquisition failures are exercised with fake HTTP responses, without source
+downloads or modifications to the prepared inputs.

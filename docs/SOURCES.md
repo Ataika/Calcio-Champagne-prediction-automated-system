@@ -65,6 +65,13 @@ this local snapshot. Names are resolved with `sql/team_name_map.sql`. Both two-
 and four-digit date years are accepted. Unplayed fixtures are excluded. This
 source remains optional and is not scraped by the loader.
 
+Completed rows require valid dates, nonnegative whole-number goals and a result
+consistent with the score. Unexpected season filenames are skipped with a
+warning. Duplicate fixtures are imported once; contradictory scores stop the
+replacement before existing matches are changed. Removing optional match input
+clears its previous stored rows on the next loader run, so stale standings or
+head-to-head results are not presented as current enrichment.
+
 Final positions are calculated using points and goal difference; official
 deductions and league-specific tie-break rules are not represented. Transfermarkt
 25/26 is a partial snapshot. Its index is never correlated with full final
