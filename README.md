@@ -49,6 +49,40 @@ The default is a complete league season; 25/26 is a partial attacking-data snaps
 Original Streamlit reference: `docker compose --profile legacy up -d legacy`,
 then http://localhost:8503. Primary API docs: http://localhost:8502/api/docs.
 
+## Analysis and club styles
+
+The main model predicts the change in Champagne Index for the next consecutive
+season from five inputs: current index, total transfer spend, attacking spend,
+squad average age and change in average player market value. Evaluation holds
+out later seasons together and compares against predicting zero change. The Lab
+uses a separately fitted all-data model for retrospective scenarios. See the
+[model protocol and measured evaluation](docs/LAB.md).
+
+An optional K-Means analysis assigns eligible club-seasons to **four groups**:
+
+| Group | How the name is assigned |
+| --- | --- |
+| Lower-tier / data-sparse | The centroid with the lowest combined recorded discipline and conceded-goal rates; missing coverage can drive this group |
+| Shoestring overachievers | Lowest mean transfer spend among the other three centroids |
+| Mid-table grinders | Middle mean transfer spend among the other three centroids |
+| Big-spending elite | Highest mean transfer spend among the other three centroids |
+
+Clustering uses attacking output, spend efficiency, discipline, goals conceded
+per match and clean-sheet rate, with reserve/youth squads excluded and at least
+15 source matches. Names are derived from each run's centroids; they are
+exploratory statistical labels, not validated tactical styles or league ranks.
+Several clubs can share a group. Visual themes are a separate interface choice.
+
+The optional analysis is not part of the default startup. After the database and
+main pipeline have completed, generate or refresh its results with:
+
+```bash
+docker compose run --rm --no-deps pipeline python club_style_clustering.py
+```
+
+Club profiles display a saved group when available for that club, season and
+competition. Refresh these results after changing the dataset or core pipeline.
+
 Verification (no test dependencies installed on the host):
 
 ```bash
@@ -159,7 +193,7 @@ to one author; the groups describe practiced responsibilities, not separate peop
 | Work group | Account | Git email | Responsibilities |
 | --- | --- | --- | --- |
 | Data, SQL and measurements | nedalozanovska | `neda.lozanovska@gmail.com` | Pinned CSV acquisition, header/hash validation, loader, canonical SQL aggregation, repeated infrastructure measurements and source provenance |
-| Prediction and evaluation | lilllaz | `lilllaz@users.noreply.github.com` | Consecutive-season targets, competition-safe feature lags, chronological RandomForest evaluation, saved Lab model and analytical interpretation |
+| Analysis, prediction and evaluation | lilllaz | `lilllaz@users.noreply.github.com` | Consecutive-season targets, competition-safe feature lags, chronological RandomForest evaluation, saved Lab model, head-to-head statistics/API and analytical interpretation |
 | Interface and integration | jacoposcaccianoce | `jacoposcaccianoce@users.noreply.github.com` | FastAPI, editorial frontend, Compose integration, API/browser/regression checks, runnable README and handoff documentation |
 
 Ataika owns the repository and authored the initial schema, loader, pipeline,

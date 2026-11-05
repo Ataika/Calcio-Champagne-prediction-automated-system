@@ -65,6 +65,23 @@ def main():
     fetch("/api/season?competition=IT1%27%3B%20DROP%20TABLE%20x&season=24%2F25", expected=422)
     fetch("/api/season?competition=IT1&season=24%2F27", expected=422)
     checks.extend(["club history keeps competition identity", "real five-feature prefill + inference", "invalid inputs rejected"])
+    meetings = fetch("/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=24%2F25")
+    assert meetings["enrichment_available"] and len(meetings["matches"]) == 2
+    assert [(m["home_team_id"], m["home_goals"], m["away_goals"])
+            for m in meetings["matches"]] == [(46, 1, 2), (5, 1, 1)]
+    inter, milan = meetings["teams"]
+    assert (inter["goals_for"], inter["goals_against"], inter["wins"], inter["draws"], inter["points"]) == (2, 3, 0, 1, 1)
+    assert (milan["goals_for"], milan["goals_against"], milan["wins"], milan["draws"], milan["points"]) == (3, 2, 1, 1, 4)
+    reverse = fetch("/api/head-to-head?team_a=5&team_b=46&competition=IT1&season=24%2F25")
+    assert reverse["teams"] == meetings["teams"][::-1]
+    empty = fetch("/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=20%2F21")
+    assert not empty["enrichment_available"] and empty["matches"] == []
+    assert empty["teams"][0]["goals_per_match"] is None
+    fetch("/api/head-to-head?team_a=46&team_b=46&competition=IT1&season=24%2F25", expected=422)
+    fetch("/api/head-to-head?team_a=46&team_b=46%27%20OR%201=1&competition=IT1&season=24%2F25", expected=422)
+    fetch("/api/head-to-head?team_a=46&team_b=11&competition=IT1&season=24%2F25", expected=404)
+    checks.extend(["head-to-head scores, home/away totals and reversed clubs",
+                   "missing match enrichment is distinct from zero goals", "invalid head-to-head clubs rejected"])
     exported = list(csv.DictReader(io.StringIO(fetch("/api/export?competition=IT1&season=24%2F25"))))
     assert len(exported) == 20
     project = fetch("/api/project")

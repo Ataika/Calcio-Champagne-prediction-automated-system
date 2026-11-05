@@ -211,6 +211,62 @@ def analysis(competition: str = "IT1", season: str = "24/25"):
             "from_year": key - 4, "to_year": key, "global_model": latest("champagne_model")}
 
 
+def summarize_head_to_head(team_id, team_name, matches):
+    """Read each score from this club's perspective, including away matches."""
+    wins = draws = losses = goals_for = goals_against = clean_sheets = 0
+    for match in matches:
+        home = match["home_team_id"] == team_id
+        scored = match["home_goals"] if home else match["away_goals"]
+        conceded = match["away_goals"] if home else match["home_goals"]
+        goals_for += scored
+        goals_against += conceded
+        wins += scored > conceded
+        draws += scored == conceded
+        losses += scored < conceded
+        clean_sheets += conceded == 0
+    return {"team_id": team_id, "team_name": team_name, "matches": len(matches),
+            "wins": wins, "draws": draws, "losses": losses,
+            "goals_for": goals_for, "goals_against": goals_against,
+            "goal_difference": goals_for - goals_against,
+            "goals_per_match": goals_for / len(matches) if matches else None,
+            "clean_sheets": clean_sheets, "points": 3 * wins + draws}
+
+
+@app.get("/api/head-to-head")
+def head_to_head(team_a: int = Query(..., gt=0, le=2_147_483_647),
+                 team_b: int = Query(..., gt=0, le=2_147_483_647),
+                 competition: str = "IT1", season: str = "24/25"):
+    scope(competition, season)
+    if team_a == team_b:
+        raise HTTPException(422, "Choose two different clubs.")
+    clubs = read("""SELECT team_id, team_name FROM champagne_results
+                    WHERE competition_id=%s AND season_name=%s AND team_id=ANY(%s)""",
+                 (competition, season, [team_a, team_b]))
+    names = {row["team_id"]: row["team_name"] for row in clubs}
+    if team_a not in names or team_b not in names:
+        raise HTTPException(404, "Both clubs must belong to the selected league and season.")
+    league_code = LEAGUES[competition]["code"]
+    matches = read("""
+        SELECT match_date, home_team_id, away_team_id, home_goals, away_goals
+        FROM match_results WHERE league_code=%s AND season_name=%s
+            AND ((home_team_id=%s AND away_team_id=%s) OR (home_team_id=%s AND away_team_id=%s))
+            AND result IN ('H', 'D', 'A') AND home_goals IS NOT NULL AND away_goals IS NOT NULL
+        ORDER BY match_date NULLS LAST, home_team_id, away_team_id
+    """, (league_code, season, team_a, team_b, team_b, team_a))
+    available = bool(matches)
+    if not matches:
+        available = read("""SELECT EXISTS (
+            SELECT 1 FROM match_results WHERE league_code=%s AND season_name=%s
+                AND result IN ('H', 'D', 'A') AND home_goals IS NOT NULL AND away_goals IS NOT NULL
+        ) AS available""", (league_code, season))[0]["available"]
+    for match in matches:
+        match["home_team_name"] = names[match["home_team_id"]]
+        match["away_team_name"] = names[match["away_team_id"]]
+    return {"competition": competition, "season": season, "source": "football-data.co.uk",
+            "enrichment_available": available, "matches": matches,
+            "teams": [summarize_head_to_head(team, names[team], matches) for team in (team_a, team_b)]}
+
+
 @app.get("/api/clubs/{team_id}")
 def club(team_id: int, competition: str = "IT1", season: str = "24/25"):
     scope(competition, season)
