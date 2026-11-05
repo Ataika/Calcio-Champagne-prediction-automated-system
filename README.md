@@ -292,11 +292,15 @@ The next six changes are independently reviewable tasks, two per work group:
 
 [Acceptance checks and the remaining submission steps](docs/WORK_PACKAGES.md)
 describe what each task delivers. The combined update after `6f34edb` has
-**12 commits, four per persona**; earlier project history is preserved.
+**12 commits, four per persona** through `158e8d8`; earlier project history is
+preserved. The later data comparison and exam-preparation package add two
+commits authored and committed by `lilllaz`; these are not attributed to the
+other accounts.
 
 ```bash
-git shortlog -sne b8d0d0a..HEAD  # six smaller follow-up commits
-git shortlog -sne 6f34edb..HEAD  # twelve commits across both series
+git shortlog -sne b8d0d0a..158e8d8  # six smaller follow-up commits
+git shortlog -sne 6f34edb..158e8d8  # twelve commits across the two series
+git shortlog -sne 158e8d8..HEAD     # two later commits by the active account
 ```
 
 GitHub authentication controls permission to push. The author/committer emails
