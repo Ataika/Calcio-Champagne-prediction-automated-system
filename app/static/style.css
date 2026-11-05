@@ -994,6 +994,68 @@ a.club-link:hover .club-name {
 .comparison-table .comparison-heading {
   font: 28px var(--serif);
 }
+#head-to-head tbody th {
+  font: inherit;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.h2h-fixtures {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 14px;
+}
+.h2h-match {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 18px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+  font-size: 13px;
+}
+.h2h-match time {
+  font: 10px var(--mono);
+  color: var(--muted);
+}
+.h2h-home {
+  text-align: right;
+}
+.h2h-match small {
+  display: block;
+  margin-top: 4px;
+  font: 9px var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.h2h-score {
+  font: 25px var(--mono);
+  color: var(--wine);
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .h2h-match {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px 10px;
+    font-size: 11px;
+  }
+  .h2h-match > time,
+  .h2h-match > .sample-note {
+    grid-column: 1 / -1;
+    text-align: center;
+  }
+  .h2h-home,
+  .h2h-away {
+    overflow-wrap: anywhere;
+  }
+  .h2h-score {
+    font-size: 20px;
+  }
+}
 .lab-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

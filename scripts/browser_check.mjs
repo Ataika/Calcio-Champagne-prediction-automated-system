@@ -217,8 +217,30 @@ try {
       2,
     );
     assert.ok(await evaluate("document.querySelector('.trend-svg')!==null"));
+    assert.ok(await evaluate("document.querySelector('#head-to-head')!==null"));
+  });
+  await check("Head-to-head shows actual derby scores and club-specific goals", async () => {
+    await evaluate("location.href='/?league=IT1&season=24%2F25&teams=46,5#compare'");
+    await wait("document.querySelectorAll('#head-to-head .h2h-match').length===2", "derby match results");
+    assert.deepEqual(
+      await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_for]'), cell => cell.textContent)"),
+      ["2", "3"],
+    );
+    assert.deepEqual(
+      await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_against]'), cell => cell.textContent)"),
+      ["3", "2"],
+    );
+    assert.deepEqual(
+      await evaluate("Array.from(document.querySelectorAll('.h2h-score'), score => score.textContent.replace(/\\s/g,''))"),
+      ["1–2", "1–1"],
+    );
   });
   await screenshot("comparison-desktop.png");
+  await check("Missing match enrichment has an explicit comparison state", async () => {
+    await evaluate("location.href='/?league=IT1&season=20%2F21&teams=46,5#compare'");
+    await wait("document.querySelector('#head-to-head .notice')?.textContent.includes('have not been loaded')", "missing match coverage");
+    assert.equal(await evaluate("document.querySelectorAll('.h2h-match').length"), 0);
+  });
   await check(
     "Lab preloads five real inputs and clamps the attack budget",
     async () => {
@@ -324,6 +346,12 @@ try {
     ),
   );
   await screenshot("overview-mobile.png");
+  await check("Mobile head-to-head comparison fits within the viewport", async () => {
+    await evaluate("location.href='/?league=IT1&season=24%2F25&teams=46,5#compare'");
+    await wait("document.querySelectorAll('#head-to-head .h2h-match').length===2", "mobile derby results");
+    assert.ok(await evaluate("document.documentElement.scrollWidth<=window.innerWidth+1"));
+  });
+  await screenshot("comparison-mobile.png");
   await go("clubs");
   await check("Mobile club grid stays within viewport", async () =>
     assert.ok(

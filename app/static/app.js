@@ -385,6 +385,29 @@ async function clubView(teamId) {
   return `<a class="back-link" href="${href("clubs")}">← All ${escape(league.name)} clubs</a><section class="club-header">${badge(data.team_name)}<div><span class="eyebrow">The club file / ${escape(league.name)} · ${season}</span><h1>${escape(data.team_name)}</h1></div><div class="header-actions"><a class="button button-dark" href="${href("lab", { team: teamId })}">Open in the Lab ↗</a><button class="button" data-pin="${teamId}">Add to comparison +</button></div></section>${filters()}${row ? `<div class="metrics-row">${metric("Champagne Index", number(row.champagne_index), "Recorded attacking output / match")}${metric("Transfer spending", euro(row.total_spend), "All incoming positions")}${metric("Attack spending", euro(row.attacking_spend), row.total_spend ? `${number((row.attacking_spend / row.total_spend) * 100, 0)}% of recorded fees` : "No recorded fees")}${metric("League finish", row.position ? "#" + row.position : "—", row.points != null ? `${row.points} points · ${season}` : "Match enrichment unavailable")}</div>` : `<div class="notice">This club does not have a ${season} season in ${escape(league.name)}. Select a season from its history.</div>`}<section class="two-col"><div class="panel"><span class="eyebrow">01 / The longer view</span><h2>Form has a history.</h2><p>Same club, same competition. Recent seasons with 30+ source matches; gaps are left unconnected.</p>${trend([data.history], [data.team_name])}</div><div class="panel"><span class="eyebrow">02 / Read the context</span><h2>One season.<br>Several perspectives.</h2><p>The index combines recorded goals and assists. Spending covers the whole club-season, including signings used in other competitions.</p>${row ? stat("Source matches", integer(row.matches), row.matches < 30 ? "Partial season snapshot" : "Season-level denominator") : ""}${row ? stat("Goals + assists", `${integer(row.total_goals)} + ${integer(row.total_assists)}`) : ""}${data.style ? `<div class="editor-note"><span class="eyebrow">Exploratory K-Means grouping</span><h3>${escape(data.style.cluster_name)}</h3><p>A historical statistical grouping, sensitive to source coverage. It is not a tactical scouting verdict.</p></div>` : ""}</div></section><section class="table-section"><div class="section-heading"><div><span class="eyebrow">03 / The archive</span><h2>Season by season.</h2></div></div><div class="data-table-wrap"><table><caption class="screen-reader-only">${escape(data.team_name)} recent complete season history</caption><thead><tr><th>Season</th><th class="numeric">Champagne Index</th><th class="numeric">Transfer spend</th><th class="numeric">Attack spend</th><th class="numeric">Source matches</th><th class="numeric">League finish</th></tr></thead><tbody>${eligible.map((r) => `<tr><td><button class="text-button" data-season-link="${r.season_name}">${r.season_name} ↗</button></td><td class="numeric">${number(r.champagne_index)}</td><td class="numeric">${euro(r.total_spend)}</td><td class="numeric">${euro(r.attacking_spend)}</td><td class="numeric">${r.matches}</td><td class="numeric">${r.position ? "#" + r.position : "—"}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
+function headToHeadView(data) {
+  const { league, season } = currentScope();
+  const heading = `<div class="section-heading"><div><span class="eyebrow">Head to head / ${escape(league.name)} · ${season}</span><h2>When they meet.</h2></div><span class="sample-note">${data.matches.length} recorded ${data.matches.length === 1 ? "meeting" : "meetings"}</span></div>`;
+  if (!data.matches.length)
+    return `<section class="table-section" id="head-to-head">${heading}<div class="notice">${data.enrichment_available ? "No completed meetings between these clubs are recorded in the selected league season." : "Match results have not been loaded for this league season. Choose another season to explore their meetings."}</div></section>`;
+  const metrics = [
+    ["Matches against each other", "matches", integer],
+    ["Wins", "wins", integer],
+    ["Draws", "draws", integer],
+    ["Losses", "losses", integer],
+    ["Goals scored", "goals_for", integer],
+    ["Goals conceded", "goals_against", integer],
+    ["Goal difference", "goal_difference", (value) => `${value > 0 ? "+" : ""}${integer(value)}`],
+    ["Goals per match", "goals_per_match", (value) => number(value)],
+    ["Clean sheets", "clean_sheets", integer],
+    ["Points from meetings", "points", integer],
+  ];
+  const dateLabel = (date) => date
+    ? new Date(`${date}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "Date unavailable";
+  return `<section class="table-section" id="head-to-head">${heading}<div class="data-table-wrap comparison-table"><table><caption class="screen-reader-only">Head-to-head statistics for ${escape(data.teams[0].team_name)} and ${escape(data.teams[1].team_name)}, ${season}</caption><thead><tr><th>Against each other</th>${data.teams.map((team) => `<th scope="col">${escape(team.team_name)}</th>`).join("")}</tr></thead><tbody>${metrics.map(([label, key, format]) => `<tr><th scope="row">${label}</th>${data.teams.map((team) => `<td class="numeric" data-h2h-stat="${key}" data-team="${team.team_id}">${format(team[key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div><ul class="h2h-fixtures" aria-label="Recorded head-to-head match results">${data.matches.map((match) => `<li class="h2h-match">${match.match_date ? `<time datetime="${match.match_date}">${dateLabel(match.match_date)}</time>` : `<span class="sample-note">${dateLabel(null)}</span>`}<span class="h2h-home">${escape(match.home_team_name)}<small>Home</small></span><strong class="h2h-score" aria-label="${match.home_goals} goals to ${match.away_goals}">${match.home_goals} <span aria-hidden="true">–</span> ${match.away_goals}</strong><span class="h2h-away">${escape(match.away_team_name)}<small>Away</small></span></li>`).join("")}</ul><p class="sample-note">Completed league meetings in ${season}, from ${escape(data.source)}. Season goals and assists above use Transfermarkt, whose coverage can differ. Match-level assists are not available in this source.</p></section>`;
+}
+
 async function comparison() {
   const queryIds = new URLSearchParams(location.search).get("teams");
   const ids = queryIds
@@ -395,11 +418,12 @@ async function comparison() {
         .filter((n) => n > 0)
         .slice(0, 2)
     : selected;
-  if (ids.length !== 2)
+  if (ids.length !== 2 || ids[0] === ids[1])
     return `${hero("The side-by-side view", "Two clubs.<br><em>One conversation.</em>", "Select two clubs in the directory or season table to compare them.", "", true)}<a class="button button-dark" href="${href("clubs")}">Choose your clubs ↗</a>`;
-  const data = await Promise.all(
-    ids.map((id) => request(scoped(`/api/clubs/${id}`))),
-  );
+  const [data, headToHead] = await Promise.all([
+    Promise.all(ids.map((id) => request(scoped(`/api/clubs/${id}`)))),
+    request(scoped("/api/head-to-head", { team_a: ids[0], team_b: ids[1] })),
+  ]);
   const { league, season } = currentScope();
   const rows = [
     ["Champagne Index", (r) => number(r.champagne_index)],
@@ -411,7 +435,7 @@ async function comparison() {
     ["Final league position", (r) => (r.position ? "#" + r.position : "—")],
     ["League points", (r) => integer(r.points)],
   ];
-  return `${hero("The comparison / " + escape(league.name) + " · " + season, "Side by <em>side.</em>", "Same league, same season. The numbers become more useful when they have company.", `<a class="button" href="${href("clubs")}">Change clubs ↗</a>`, true)}${filters()}<div class="data-table-wrap comparison-table"><table><thead><tr><th>Season ${season}</th>${data.map((d) => `<th>${badge(d.team_name)}<br><a class="comparison-heading" href="${href("club/" + (d.current?.team_id || ids[data.indexOf(d)]))}">${escape(d.team_name)}</a></th>`).join("")}</tr></thead><tbody>${rows.map(([label, format]) => `<tr><td>${label}</td>${data.map((d) => `<td class="numeric">${d.current ? format(d.current) : "No season data"}</td>`).join("")}</tr>`).join("")}</tbody></table></div><section class="panel" style="margin-top:30px"><span class="eyebrow">The longer view / 30+ source matches</span><h2>A rivalry, over time.</h2>${trend(
+  return `${hero("The comparison / " + escape(league.name) + " · " + season, "Side by <em>side.</em>", "Same league, same season. The numbers become more useful when they have company.", `<a class="button" href="${href("clubs")}">Change clubs ↗</a>`, true)}${filters()}<div class="data-table-wrap comparison-table"><table><thead><tr><th>Season ${season}</th>${data.map((d) => `<th>${badge(d.team_name)}<br><a class="comparison-heading" href="${href("club/" + (d.current?.team_id || ids[data.indexOf(d)]))}">${escape(d.team_name)}</a></th>`).join("")}</tr></thead><tbody>${rows.map(([label, format]) => `<tr><td>${label}</td>${data.map((d) => `<td class="numeric">${d.current ? format(d.current) : "No season data"}</td>`).join("")}</tr>`).join("")}</tbody></table></div>${headToHeadView(headToHead)}<section class="panel" style="margin-top:30px"><span class="eyebrow">The longer view / 30+ source matches</span><h2>A rivalry, over time.</h2>${trend(
     data.map((d) => d.history),
     data.map((d) => d.team_name),
   )}<div class="chart-legend sample-note">${data.map((d, i) => `<span><i class="legend-dot ${i ? "olive" : ""}"></i>${escape(d.team_name)}</span>`).join("")}</div></section><p class="notice">Spending is recorded incoming fees, not wages or total squad cost. The index describes attacking output; it does not establish which club recruited better.</p>`;

@@ -2,7 +2,7 @@
 
 Scope: data validity, model evaluation, application behavior, reproducibility,
 course evidence and a complete editorial frontend. Work branch:
-`codex/calcio-editorial-audit`. No remote publication is part of this change.
+`codex/calcio-editorial-audit`.
 
 ## Findings and corrections
 
@@ -94,3 +94,19 @@ recording the recommended two-minute backup video are not fabricated as complete
   repetitions, hardware, snapshot/caching conditions and sampling limitations.
   Screenshots and machine-readable check results are local ignored artifacts;
   source CSVs, model weights and credentials remain excluded from Git/build context.
+
+## 5 November 2026 — comparison follow-up
+
+The comparison now includes completed head-to-head league meetings for the
+selected season: individual home/away scores, wins/draws/losses, goals for and
+against, goal difference, goals per match, clean sheets and points. Aggregation
+preserves each club's perspective, including away games. Missing match-source
+coverage is distinct from an empty meeting list or a real 0–0 draw; match-level
+assists are not inferred from season totals.
+
+Executed validation: **16 regression tests, 16 live API/data checks and 15 browser
+checks passed**. The Inter/Milan 24/25 example matches the prepared source's 1–2
+and 1–1 fixtures and 2–3 aggregate goals. Checks include reversed club order,
+invalid/same/out-of-scope clubs, missing enrichment and the 390px comparison.
+README records the six-commit update after `6f34edb`, with two commits per persona,
+their exact Git emails and the distinction between authorship and push access.

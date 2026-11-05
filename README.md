@@ -49,6 +49,30 @@ The default is a complete league season; 25/26 is a partial attacking-data snaps
 Original Streamlit reference: `docker compose --profile legacy up -d legacy`,
 then http://localhost:8503. Primary API docs: http://localhost:8502/api/docs.
 
+## Interfaces and head-to-head comparison
+
+| Interface | Appearance | Address |
+| --- | --- | --- |
+| Primary journal | Paper background, burgundy/olive accents, editorial typography | http://localhost:8502 |
+| Legacy Streamlit | Dark background and gold accents; optional `legacy` Compose profile | http://localhost:8503 |
+
+The primary interface has one visual theme. Club-style clusters described below
+are analytical categories, independent of interface appearance.
+
+Select two clubs in the directory or season table and open **Compare**. Alongside
+their season totals, **Head to head** shows their completed meetings in the
+selected league and season: dates and home/away scores, wins/draws/losses, goals
+scored and conceded, goal difference, goals per match, clean sheets and points.
+For example, [Inter vs. Milan, Serie A 24/25](http://localhost:8502/?league=IT1&season=24%2F25&teams=46,5#compare)
+contains the two recorded league matches, 1–2 and 1–1. The totals are Inter 2–3
+Milan, with one draw and one Milan win.
+
+These are league-only meetings in the selected season, not the clubs' entire
+rivalry or cup results. Match scores come from the optional football-data.co.uk
+enrichment; missing coverage is shown explicitly. Match-level assists are absent
+from that source, so the comparison does not invent them or derive a head-to-head
+Champagne Index from season-level assists.
+
 ## Analysis and club styles
 
 The main model predicts the change in Champagne Index for the next consecutive
@@ -83,7 +107,9 @@ docker compose run --rm --no-deps pipeline python club_style_clustering.py
 Club profiles display a saved group when available for that club, season and
 competition. Refresh these results after changing the dataset or core pipeline.
 
-Verification (no test dependencies installed on the host):
+## Verification
+
+No test dependencies need to be installed on the host:
 
 ```bash
 docker compose run --rm --no-deps -v "$PWD:/source:ro" -w /source app \
@@ -200,6 +226,27 @@ Ataika owns the repository and authored the initial schema, loader, pipeline,
 Compose setup and enrichment. Those historical bootstrap/integration commits are
 separate from the three-persona allocation. The emails above are taken from
 existing Git history and are used for both author and committer in the new series.
+
+### Balanced commit series
+
+The November audit and head-to-head update on `codex/calcio-editorial-audit`
+contains **six commits after baseline `6f34edb`: two per work group**.
+
+| Account | Implementation commit | Follow-up commit | Count |
+| --- | --- | --- | ---: |
+| nedalozanovska | Validated source imports, canonical SQL and infrastructure measurements | Work-group responsibilities and Git identities in README | 2 |
+| lilllaz | Correct consecutive targets, feature lags and chronological model evaluation | Head-to-head API/statistics, regression/live checks and analytical documentation | 2 |
+| jacoposcaccianoce | Editorial dashboard, HTTP API, runnable setup and validation | Head-to-head interface, browser checks, API handoff and README publication details | 2 |
+
+Verify the allocation from the branch checkout:
+
+```bash
+git shortlog -sne 6f34edb..HEAD
+```
+
+This count applies to the new series; older project history is preserved.
+GitHub authentication controls permission to push. The author/committer emails
+above determine commit attribution, independently of the browser sign-in account.
 
 November audit and editorial frontend were implemented with Codex assistance on
 `codex/calcio-editorial-audit`. [Audit record](docs/AUDIT.md) documents source and

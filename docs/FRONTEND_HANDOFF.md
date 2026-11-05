@@ -14,7 +14,10 @@ docker compose --profile legacy up -d legacy
   next-consecutive-season analysis with a table of every plotted observation.
 - `#clubs` and `#club/<id>`: directory, exact-competition history, profile and Lab
   entry. Missing years are left as gaps; partial recent seasons are not connected.
-- `#compare`: exactly two clubs, a shared season and historical competition.
+- `#compare`: exactly two clubs, a shared season and historical competition;
+  completed head-to-head scores, wins/draws/losses, goals for/against, goals per
+  match, clean sheets and points from their meetings. Missing match enrichment
+  is shown explicitly; it is not represented as a goalless draw.
 - `#lab`: real five-input prefill, original/model-scenario comparison, reset and
   observed model limits. No hidden median inputs or invented prediction bands.
 - `#project`: architecture, source provenance, live model evaluation, measured
@@ -35,6 +38,7 @@ visible as disabled options with a partial label.
 | `GET /api/season?competition=IT1&season=24/25&min_matches=15` | Bounded season rows, same-sample descriptive correlations |
 | `GET /api/analysis?competition=IT1&season=24/25` | Five-season input window, valid next-season deltas, fit for that displayed sample; separately labeled global model |
 | `GET /api/clubs/46?competition=IT1&season=24/25` | Club history, selected-season context and optional exploratory cluster |
+| `GET /api/head-to-head?team_a=46&team_b=5&competition=IT1&season=24/25` | Completed league meetings and per-club aggregates in requested club order; explicit enrichment availability |
 | `GET /api/lab/config?team_id=46&competition=IT1&season=24/25` | Exact prefill, missing inputs, ranges and evaluation |
 | `POST /api/lab/predict` | Five-feature JSON body; predicted delta/index and support warnings |
 | `GET /api/export?competition=IT1&season=24/25` | CSV for the displayed season, with spreadsheet-formula protection |
