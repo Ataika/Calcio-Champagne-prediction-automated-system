@@ -1,44 +1,37 @@
-# Presentation findings
+# Findings for the presentation
 
-Short, spoken-out-loud findings, each backed by a real number from the dashboard or
-database — not a guess.
+Measured from the corrected pipeline on 4 November 2026. Read current model
+tables or the app's Project view if the dataset is recomputed.
 
-1. **The Champagne Index actually means something.** Across the top-5 European
-   leagues, 2021–2026 (484 team-seasons with real match data), a team's Champagne
-   Index correlates with **r = -0.663** (p < 0.0001) against its final league
-   position — a higher index tracks with finishing higher (lower-numbered) in the
-   table. That's the headline: "goals + assists per match" isn't an arbitrary stat,
-   it tracks real results.
+1. **Recorded attacking output tracks same-season league finish.** r = −0.793285,
+   n = 388 sufficiently covered club-seasons from the five European leagues,
+   21/22–24/25. Higher index accompanies a lower-numbered finish. This is a
+   descriptive association, not evidence of next-season forecasting or causation.
+   The earlier r = −0.663 included a partial 25/26 Transfermarkt snapshot paired
+   with a full final table; that mismatch is now excluded.
 
-2. **Money alone doesn't buy more attacking output.** Across the whole dataset
-   (all competitions, 1960–2025), transfer spend against next season's change in
-   Champagne Index comes out at **r ≈ -0.01** — essentially no relationship. Simply
-   spending more on transfers doesn't predict a more attacking team the following
-   season (see Issue #3 — this might change once reserve/youth competitions are
-   filtered out of the fit).
+2. **Transfer spend alone has almost no relationship with next-season index
+   change.** r = −0.003613, p = 0.478242, n = 38,531 eligible consecutive pairs.
+   First-team squads only; top-five pairs require 30 matches in both seasons,
+   other competitions five. Missing seasons and partial next seasons are not
+   targets. Avoid comparing this directly with the original 54,186-row sample.
 
-3. **"Best value for money" is dominated by noise, not a real story.** The naive
-   leaderboard (`sql/exploration.sql` Query 3a, `spend_efficiency` sorted DESC)
-   is topped by tiny-spend outliers: Manchester City's U21 side spent a
-   nominal **€1 total** and still posted a 2.9 Champagne Index, followed by a
-   run of Italian lower-league cup campaigns (AC Prato, Foligno Calcio,
-   Vicenza Calcio) with €50k–250k spend. There's no team here that genuinely
-   "solved" attacking output cheaply at a real, competitive first-team level —
-   this metric needs a minimum-spend and first-team filter (the same idea as
-   Issue #3's reserve/youth exclusion) before a real "smart spenders" claim
-   could be made.
+3. **The richer model adds modest predictive value under a temporal holdout.**
+   Test R² = 0.127115; MAE = 0.485593 index points vs. 0.511364 for zero change.
+   16,074 earlier training rows, 5,585 held-out rows from season start 2021.
+   This is roughly a 5% reduction in mean absolute error, not 87% prediction
+   accuracy. The interactive Lab uses a separate all-data model and makes that
+   distinction explicit.
 
-4. **"Worst value for money" is mostly zero-output cup runs, not wasted
-   budgets.** The bottom of the same leaderboard (Query 3b) is five single-cup
-   campaigns — mostly 1. FC Kaiserslautern and 1. FC Saarbrücken in the
-   DFB-Pokal and Intertoto-Cup across the 80s/90s/00s — each with a Champagne
-   Index of exactly **0.0** despite real transfer spend (€150k–675k). These
-   are squads that simply didn't score or assist in that one cup competition,
-   not evidence that the transfer money itself was wasted.
+4. **A useful club-level example:** Serie A 24/25, Atalanta records index 3.50
+   with €96m incoming fees, Juventus 2.74 with €164.3m, and Inter 3.84 with
+   €75.55m. This is a same-season comparison, not a causal recruitment ranking.
 
-5. **The Premier League spends more per transfer than anyone else, by a wide
-   margin.** Across 13,754 paid transfers (Query 2), the Premier League's
-   average fee is **€13.7M** — 55% higher than second-place LaLiga (€8.85M),
-   and more than double Ligue 1, Serie A, or the Bundesliga (€5.6M–6.6M each).
-   Total nominal Premier League spend across the full dataset (1960–2025) is
-   also by far the largest of the top-5 leagues at **€188.6B**.
+5. **Naive “value for money” rankings are unstable.** Tiny/undisclosed fees,
+   reserve teams, short cup runs and missing defensive coverage can dominate
+   ratio metrics and clusters. Show an actual league/season and sample count;
+   do not sell a zero-fee or sparse-data outlier as a scouting discovery.
+
+For infrastructure evidence use the three-repeat measurements in README and
+`measure/results/results.json`. Individual runs and hardware are part of the
+claim. Do not reuse the original one-run timing or unobserved memory numbers.

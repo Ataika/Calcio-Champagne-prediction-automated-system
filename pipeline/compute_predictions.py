@@ -15,6 +15,8 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 import joblib
 import pandas as pd
@@ -22,8 +24,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
 
 MODELS_DIR = "/models"
 
@@ -55,6 +56,8 @@ def connect():
                 dbname=os.environ["POSTGRES_DB"],
                 user=os.environ["POSTGRES_USER"],
                 password=os.environ["POSTGRES_PASSWORD"],
+                application_name="calcio_pipeline",
+                options="-c work_mem=64MB -c jit=off",
             )
         except psycopg2.OperationalError as exc:
             last_error = exc
@@ -106,7 +109,17 @@ def compute(conn, reserve_youth_ids):
     merged = merged.sort_values(["team_id", "competition_id", "season_key"])
     group = merged.groupby(["team_id", "competition_id"])
     merged["next_champagne_index"] = group["champagne_index"].shift(-1)
-    merged["delta_index"] = merged["next_champagne_index"] - merged["champagne_index"]
+    merged["next_season_key"] = group["season_key"].shift(-1)
+    merged["next_matches"] = group["matches"].shift(-1)
+    # A return after relegation is not "next season". Partial snapshots must not
+    # become targets for a full-season model (25/26 has only 2–4 league matches).
+    minimum = merged["competition_id"].isin(LEAGUE_TO_COMPETITION.values()).map({True: 30, False: 5})
+    valid_pair = (
+        (merged["next_season_key"] == merged["season_key"] + 1)
+        & (merged["matches"].fillna(0) >= minimum)
+        & (merged["next_matches"].fillna(0) >= minimum)
+    )
+    merged["delta_index"] = (merged["next_champagne_index"] - merged["champagne_index"]).where(valid_pair)
     merged["is_latest_season"] = group["season_key"].transform("max") == merged["season_key"]
 
     # Fit the trend only on rows with a real next season, a reasonable sample of
@@ -158,24 +171,33 @@ def build_ml_features(conn, merged):
         .reset_index().rename(columns={"age": "squad_avg_age"})
     )
 
-    market_values = pd.read_sql(
-        "SELECT player_id, EXTRACT(YEAR FROM date_unix) AS year, value FROM player_market_value", conn
-    )
+    # One latest observation per player/calendar year. Otherwise players with
+    # more valuation snapshots receive more weight in a team's squad average.
+    market_values = pd.read_sql("""
+        SELECT DISTINCT ON (player_id, EXTRACT(YEAR FROM date_unix))
+               player_id, EXTRACT(YEAR FROM date_unix)::integer AS season_key, value
+        FROM player_market_value
+        WHERE value IS NOT NULL
+        ORDER BY player_id, EXTRACT(YEAR FROM date_unix), date_unix DESC
+    """, conn)
     roster_mv = roster[["team_id", "season_name", "player_id", "season_key"]].merge(
-        market_values, on="player_id", how="left"
+        market_values, on=["player_id", "season_key"], how="left"
     )
-    roster_mv = roster_mv[roster_mv["year"] == roster_mv["season_key"]]
     mv_by_team_season = (
         roster_mv.groupby(["team_id", "season_name"])["value"].mean()
         .reset_index().rename(columns={"value": "squad_avg_value"})
     )
 
-    features = merged.merge(age_by_team_season, on=["team_id", "season_name"], how="left")
-    features = features.merge(mv_by_team_season, on=["team_id", "season_name"], how="left")
-    features = features.sort_values(["team_id", "season_key"])
-    features["prev_squad_avg_value"] = features.groupby("team_id")["squad_avg_value"].shift(1)
-    features["market_value_change"] = features["squad_avg_value"] - features["prev_squad_avg_value"]
-    return features
+    # Compute lag BEFORE joining competition rows. Shifting after the join used
+    # another competition in the same season as the "previous season".
+    squad = age_by_team_season.merge(mv_by_team_season, on=["team_id", "season_name"], how="left")
+    squad["season_key"] = squad["season_name"].apply(season_sort_key)
+    previous = squad[["team_id", "season_key", "squad_avg_value"]].copy()
+    previous["season_key"] += 1
+    previous = previous.rename(columns={"squad_avg_value": "prev_squad_avg_value"})
+    squad = squad.merge(previous, on=["team_id", "season_key"], how="left", validate="one_to_one")
+    squad["market_value_change"] = squad["squad_avg_value"] - squad["prev_squad_avg_value"]
+    return merged.merge(squad.drop(columns="season_key"), on=["team_id", "season_name"], how="left", validate="many_to_one")
 
 
 def fit_ml_model(features, reserve_youth_ids):
@@ -191,10 +213,16 @@ def fit_ml_model(features, reserve_youth_ids):
 
     X = train[ML_FEATURE_COLUMNS].astype(float)
     y = train["delta_index"].astype(float)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Hold out recent seasons together; never randomly mix future and past.
+    cutoff = int(train["season_key"].quantile(0.8))
+    earlier = train["season_key"] < cutoff
+    if earlier.sum() < 30 or (~earlier).sum() < 10:
+        return None
+    X_train, X_test, y_train, y_test = X[earlier], X[~earlier], y[earlier], y[~earlier]
     model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=42, n_jobs=-1)
     model.fit(X_train, y_train)
-    r2 = float(r2_score(y_test, model.predict(X_test)))
+    predictions = model.predict(X_test)
+    r2 = float(r2_score(y_test, predictions))
     importances = dict(zip(ML_FEATURE_COLUMNS, model.feature_importances_.astype(float)))
 
     # Separate model trained on ALL available rows (not just the train split) for
@@ -203,21 +231,34 @@ def fit_ml_model(features, reserve_youth_ids):
     deploy_model = RandomForestRegressor(n_estimators=200, max_depth=6, random_state=42, n_jobs=-1)
     deploy_model.fit(X, y)
     feature_ranges = {
-        col: {"min": float(X[col].min()), "median": float(X[col].median()), "max": float(X[col].max())}
+        col: {"min": float(X[col].min()), "median": float(X[col].median()), "max": float(X[col].max()),
+              "p01": float(X[col].quantile(0.01)), "p99": float(X[col].quantile(0.99))}
         for col in ML_FEATURE_COLUMNS
     }
-    return r2, len(train), importances, deploy_model, feature_ranges
+    evaluation = {
+        "split": "chronological season holdout", "test_from_season": cutoff,
+        "train_rows": int(earlier.sum()), "test_rows": int((~earlier).sum()),
+        "mae": float(mean_absolute_error(y_test, predictions)),
+        "baseline_mae": float(mean_absolute_error(y_test, [0.0] * len(y_test))),
+        "baseline_r2": float(r2_score(y_test, [0.0] * len(y_test))),
+        "target": "next consecutive season index minus current index",
+        "seed": 42, "n_estimators": 200, "max_depth": 6,
+    }
+    return r2, len(train), importances, deploy_model, feature_ranges, evaluation
 
 
-def save_lab_model(model, feature_ranges):
+def save_lab_model(model, feature_ranges, evaluation):
     """Persists the fitted RandomForest (not just its score) to a shared volume
     so the dashboard's Lab tab can load it and predict on arbitrary user input
     without the app container needing its own copy of the training pipeline."""
     os.makedirs(MODELS_DIR, exist_ok=True)
+    temporary = os.path.join(MODELS_DIR, "champagne_rf_model.joblib.tmp")
     joblib.dump(
-        {"model": model, "feature_cols": ML_FEATURE_COLUMNS, "feature_ranges": feature_ranges},
-        os.path.join(MODELS_DIR, "champagne_rf_model.joblib"),
+        {"model": model, "feature_cols": ML_FEATURE_COLUMNS, "feature_ranges": feature_ranges,
+         "evaluation": evaluation},
+        temporary,
     )
+    os.replace(temporary, os.path.join(MODELS_DIR, "champagne_rf_model.joblib"))
 
 
 def compute_standings(conn, champagne_results):
@@ -274,6 +315,11 @@ def compute_standings(conn, champagne_results):
         how="left",
     )
 
+    # Do not correlate a partial Transfermarkt season with a final league table.
+    coverage = champagne_results[["team_id", "season_name", "competition_id", "matches"]]
+    enriched = enriched.merge(coverage, on=["team_id", "season_name", "competition_id"], how="left")
+    comparable = (enriched["played"] >= 30) & (enriched["matches"] >= 0.8 * enriched["played"])
+    enriched.loc[~comparable, "champagne_index"] = float("nan")
     corr_stats = None
     sample = enriched.dropna(subset=["champagne_index", "position"])
     if len(sample) >= 20:
@@ -319,9 +365,8 @@ def write_standings(conn, standings_df, corr_stats):
                 computed_at TIMESTAMP DEFAULT now()
             );
         """)
-    conn.commit()
-
     if standings_df.empty:
+        conn.commit()
         print("[pipeline] no match_results found, skipping league_standings", flush=True)
         return
 
@@ -367,7 +412,8 @@ def write_results(conn, merged, model_stats):
                 attacking_spend NUMERIC,
                 delta_index NUMERIC,
                 predicted_next_index NUMERIC,
-                is_latest_season BOOLEAN
+                is_latest_season BOOLEAN,
+                PRIMARY KEY (team_id, season_name, competition_id)
             );
         """)
         cur.execute("""
@@ -380,8 +426,6 @@ def write_results(conn, merged, model_stats):
                 computed_at TIMESTAMP DEFAULT now()
             );
         """)
-    conn.commit()
-
     frame = merged[RESULT_COLUMNS].astype(object).where(pd.notnull(merged[RESULT_COLUMNS]), None)
     records = frame.values.tolist()
 
@@ -415,21 +459,40 @@ def write_ml_model(conn, ml_result):
             );
         """)
         cur.execute("DELETE FROM champagne_model_ml;")
+        cur.execute("ALTER TABLE champagne_model_ml ADD COLUMN IF NOT EXISTS evaluation TEXT;")
         if ml_result:
-            r2, n, importances, _model, _ranges = ml_result
+            r2, n, importances, _model, _ranges, evaluation = ml_result
             cur.execute(
-                "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances) "
-                "VALUES (%s, %s, %s)",
-                (r2, n, json.dumps(importances)),
+                "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation) "
+                "VALUES (%s, %s, %s, %s)",
+                (r2, n, json.dumps(importances), json.dumps(evaluation)),
             )
     conn.commit()
 
 
+def write_lab_features(conn, features):
+    """Persist real club/season inputs so the UI never silently substitutes medians."""
+    cols = ["team_id", "season_name", "competition_id"] + ML_FEATURE_COLUMNS
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE IF EXISTS lab_team_features;")
+        cur.execute("""CREATE TABLE lab_team_features (
+            team_id INTEGER, season_name TEXT, competition_id TEXT,
+            champagne_index NUMERIC, total_spend NUMERIC, attacking_spend NUMERIC,
+            squad_avg_age NUMERIC, market_value_change NUMERIC,
+            PRIMARY KEY (team_id, season_name, competition_id)
+        );""")
+        frame = features[cols].astype(object).where(pd.notnull(features[cols]), None)
+        execute_values(cur, f"INSERT INTO lab_team_features ({', '.join(cols)}) VALUES %s", frame.values.tolist())
+    conn.commit()
+
+
 def main():
+    started = time.perf_counter()
     conn = connect()
     build_views(conn)
     reserve_youth_ids = load_reserve_youth_team_ids(conn)
     merged, model_stats = compute(conn, reserve_youth_ids)
+    aggregation_elapsed = time.perf_counter() - started
     write_results(conn, merged, model_stats)
     slope, intercept, r_value, p_value, n = model_stats
     print(
@@ -439,22 +502,26 @@ def main():
         flush=True,
     )
 
+    ml_started = time.perf_counter()
     ml_features = build_ml_features(conn, merged)
+    write_lab_features(conn, ml_features)
     ml_result = fit_ml_model(ml_features, reserve_youth_ids)
     write_ml_model(conn, ml_result)
     if ml_result:
-        r2, n_ml, importances, deploy_model, feature_ranges = ml_result
+        r2, n_ml, importances, deploy_model, feature_ranges, evaluation = ml_result
         top_feature = max(importances, key=importances.get)
         print(
             f"[pipeline] RandomForest richer-feature model: test R^2={r2:.3f} n={n_ml} "
             f"top feature={top_feature} ({importances[top_feature]:.3f})",
             flush=True,
         )
-        save_lab_model(deploy_model, feature_ranges)
+        save_lab_model(deploy_model, feature_ranges, evaluation)
         print(f"[pipeline] saved Lab model to {MODELS_DIR}/champagne_rf_model.joblib", flush=True)
     else:
         print("[pipeline] not enough complete rows to fit the RandomForest model, skipping", flush=True)
 
+    ml_elapsed = time.perf_counter() - ml_started
+    standings_started = time.perf_counter()
     standings_df, corr_stats = compute_standings(conn, merged)
     write_standings(conn, standings_df, corr_stats)
     if corr_stats:
@@ -466,6 +533,13 @@ def main():
         )
 
     conn.close()
+    output = Path(os.getenv("RESULTS_DIR", "/results"))
+    if output.is_dir():
+        payload = {"measured_at": datetime.now(timezone.utc).isoformat(),
+                   "aggregation_seconds": aggregation_elapsed, "ml_seconds": ml_elapsed,
+                   "standings_seconds": time.perf_counter() - standings_started,
+                   "full_seconds": time.perf_counter() - started}
+        (output / "pipeline.json").write_text(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":

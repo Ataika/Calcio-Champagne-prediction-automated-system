@@ -1,63 +1,61 @@
-# The Lab tab
+# Scenario Lab and model protocol
 
-An interactive "what would this team-season look like" playground in the
-dashboard — drag sliders for a hypothetical (or real) team, get a live
-prediction. Built to make the model tangible rather than just a number in a
-README, so a non-technical visitor has something to click and learn from.
+## Prediction unit and intended use
 
-## How it works
+A row is club × season × competition. The target is next consecutive season's
+Champagne Index minus the current index. The UI is a retrospective educational
+scenario explorer. It is not a causal transfer-spending estimator or a live
+league-position forecast.
 
-1. **Training** (`pipeline/compute_predictions.py::fit_ml_model`) fits the
-   same `RandomForestRegressor` as Issue #3's richer model, on the five
-   features in `ML_FEATURE_COLUMNS` (`champagne_index`, `total_spend`,
-   `attacking_spend`, `squad_avg_age`, `market_value_change`), predicting
-   `delta_index` (next season's Champagne Index minus this season's).
+Features: current `champagne_index`, `total_spend`, `attacking_spend`,
+`squad_avg_age`, `market_value_change`. Squad age is season start year minus birth
+year, averaged across the distinct season roster. Market values use the latest
+observed value per player in the season's starting calendar year, with equal
+player weighting. Its change joins the exact preceding club-season before any
+competition rows are joined. Missing inputs are not silently filled for the Lab.
 
-2. **Two models get fit, not one**: the first is trained on an 80/20 split
-   specifically so its score on the held-out 20% is an honest R² (currently
-   ≈0.15 — a real but modest signal, reported in `champagne_model_ml`). The
-   second is retrained on **all** available rows — a better model for actual
-   predictions, but its score can't be honestly reported (it already saw
-   that data), so its R² is never quoted, only the held-out one is.
-   See `save_lab_model` / `fit_ml_model` in `compute_predictions.py`.
+Targets require consecutive years, at least 30 source matches in both top-five
+league seasons, or five in other competitions. Reserve/youth squads are excluded
+from model fitting using `team_children`. No target is formed across a promotion
+or relegation gap in a competition or from a partial 25/26 league snapshot.
 
-3. **Persistence**: the all-data model is pickled with `joblib` to
-   `/models/champagne_rf_model.joblib`, a bind-mounted directory shared
-   between the `pipeline` and `app` containers (`./models` on the host —
-   gitignored, regenerated every pipeline run, same pattern as
-   `measure/results/results.json`). The bundle also stores the exact
-   feature column order and each feature's observed min/median/max, so the
-   dashboard can build sensible slider ranges without a second DB query.
+## Evaluation and baseline
 
-4. **Inference** (`app/dashboard.py`, `tab_lab`): loads the joblib bundle
-   with `@st.cache_resource`, builds a one-row DataFrame from the slider
-   values (column order must match `lab["feature_cols"]` — the bundle
-   carries this on purpose so a future refactor of the feature list can't
-   silently misalign model input), and calls `.predict()`.
+The most recent seasons accounting for roughly 20% of eligible observations are
+held out together, using `season_key` as the boundary. Earlier seasons train the
+evaluation model; later seasons test it. Multiple competitions from one season
+cannot straddle the boundary. This is one fixed chronological holdout, not nested
+cross-validation or an independently verified live backtest. Hyperparameters are
+fixed: 200 trees, maximum depth 6, seed 42. The earlier implementation used a
+random row split; its old score is not directly comparable.
 
-5. **League position estimate**: a second, much rougher step. The
-   `champagne_vs_position_model` table stores the slope/intercept of the
-   linear fit between Champagne Index and real league position (not just
-   r/p like before — Issue #3 only needed the correlation strength, the Lab
-   tab needed the actual fitted line, so `slope`/`intercept` columns were
-   added to that table too). The Lab tab inverts that line:
-   `position ≈ slope * predicted_next_index + intercept`, clamped to ≥1.
-   This is explicitly labelled as "a vibe, not a prediction" in the UI — r
-   = -0.663 means real position depends on plenty the model doesn't see
-   (fixtures, injuries, luck).
+Measured on 4 November 2026: cutoff 2021, 16,074 training observations, 5,585 test
+observations; R² 0.127115, MAE 0.485593. Predicting zero change on the same test
+rows gives MAE 0.511364 and R² −0.000183. The improvement is modest. These numbers
+are stored with sample counts and protocol in `champagne_model_ml.evaluation`.
 
-## Why two separate concerns stayed separate
+A second RandomForest is trained on all eligible rows for Lab exploration. Its
+own training fit is never reported as test performance. Some prefilled historical
+club-seasons occurred in this model's training; the UI states that explicitly.
+See [scikit-learn's temporal evaluation guidance](https://scikit-learn.org/stable/modules/cross_validation.html#cross-validation-of-time-series-data)
+for the reason to keep future seasons out of historical training evaluation.
 
-It would be tempting to fold "train" and "predict" into one function, but
-keeping evaluation (held-out R²) and deployment (all-data model) as
-genuinely different model objects is what makes the R²≈0.15 claim honest —
-a model's own training data is not evidence of how well it generalizes.
+## Persistence and inference
 
-## Extending it
+`models/champagne_rf_model.joblib` contains model, ordered feature names, observed
+min/median/max and percentile ranges, plus evaluation metadata. The pipeline
+writes a temporary file and replaces the old model atomically. The API loads
+only this local trusted artifact and invalidates its cache on file change.
 
-To add a feature to the Lab: add it to `ML_FEATURE_COLUMNS` in
-`compute_predictions.py`, make sure `build_ml_features` computes it, add a
-matching `st.slider` in `tab_lab` (pull its range from
-`lab["feature_ranges"][your_new_column]`), and re-run the pipeline — the
-`feature_cols` list in the saved bundle keeps the dashboard's input order in
-sync with the model automatically, nothing else to wire up.
+`lab_team_features` stores all five real inputs by exact team, season and
+competition. `/api/lab/config` reports missing fields; the UI asks the visitor to
+choose another club instead of substituting dataset medians.
+
+`POST /api/lab/predict` validates finite numbers, budget/age/index bounds and
+`attacking_spend <= total_spend`; feature order follows the artifact. The browser
+bounds the attack slider by the total budget, debounces requests and discards
+stale responses. Baseline and modified scenario use the same deployed model.
+
+No uncertainty band is fabricated. Observed out-of-training-range inputs are
+identified. The old approximate league-position output is omitted because a
+same-season association is not a calibrated next-season rank forecast.
