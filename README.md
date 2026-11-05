@@ -153,14 +153,19 @@ Interpretation and measurement limits: [detailed report](docs/MEASUREMENTS.md).
 
 ## Who did what
 
-All historical accounts are one author's workflow practice, not four real people:
+Three personas organize the work into the following groups. All accounts belong
+to one author; the groups describe practiced responsibilities, not separate people.
 
-| Account | Role practiced |
-| --- | --- |
-| Ataika | Schema, loader, pipeline, Compose, measurements, enrichment |
-| jacoposcaccianoce | README validation |
-| nedalozanovska | SQL exploration |
-| lilllaz | Prediction model |
+| Work group | Account | Git email | Responsibilities |
+| --- | --- | --- | --- |
+| Data, SQL and measurements | nedalozanovska | `neda.lozanovska@gmail.com` | Pinned CSV acquisition, header/hash validation, loader, canonical SQL aggregation, repeated infrastructure measurements and source provenance |
+| Prediction and evaluation | lilllaz | `lilllaz@users.noreply.github.com` | Consecutive-season targets, competition-safe feature lags, chronological RandomForest evaluation, saved Lab model and analytical interpretation |
+| Interface and integration | jacoposcaccianoce | `jacoposcaccianoce@users.noreply.github.com` | FastAPI, editorial frontend, Compose integration, API/browser/regression checks, runnable README and handoff documentation |
+
+Ataika owns the repository and authored the initial schema, loader, pipeline,
+Compose setup and enrichment. Those historical bootstrap/integration commits are
+separate from the three-persona allocation. The emails above are taken from
+existing Git history and are used for both author and committer in the new series.
 
 November audit and editorial frontend were implemented with Codex assistance on
 `codex/calcio-editorial-audit`. [Audit record](docs/AUDIT.md) documents source and
