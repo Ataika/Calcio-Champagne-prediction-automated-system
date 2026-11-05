@@ -40,6 +40,7 @@ LEAGUES = {
     "FR1": {"name": "Ligue 1", "country": "France", "code": "F1"},
 }
 FEATURES = ["champagne_index", "total_spend", "attacking_spend", "squad_avg_age", "market_value_change"]
+REQUIRED_OUTPUT_TABLES = ("champagne_results", "league_standings", "lab_team_features", "match_results")
 app = FastAPI(title="Calcio Champagne", version="2.0.0", docs_url=None, redoc_url=None,
               openapi_url="/api/openapi.json")
 log = logging.getLogger("calcio")
@@ -147,9 +148,16 @@ async def database_error(request, exc):
 
 @app.get("/api/health")
 def health():
-    read("SELECT 1")
-    ready = exists("champagne_results")
-    return JSONResponse(status_code=200 if ready else 503, content={"ready": ready, "model_available": MODEL_PATH.exists()})
+    tables = read("""SELECT name, to_regclass('public.' || name) IS NOT NULL AS available
+                     FROM unnest(%s::text[]) AS required(name)""", (list(REQUIRED_OUTPUT_TABLES),))
+    missing = [table["name"] for table in tables if not table["available"]]
+    has_results = False
+    if not missing:
+        has_results = read("SELECT EXISTS (SELECT 1 FROM champagne_results) AS available")[0]["available"]
+    ready = not missing and has_results
+    return JSONResponse(status_code=200 if ready else 503,
+                        content={"ready": ready, "model_available": MODEL_PATH.exists(),
+                                 "missing_tables": missing, "has_results": has_results})
 
 
 @app.get("/api/meta")
