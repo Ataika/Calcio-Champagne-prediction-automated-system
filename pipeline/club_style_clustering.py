@@ -68,27 +68,23 @@ def build_features(conn):
         )["child_team_id"]
     )
 
-    defensive = pd.read_sql(
+    # goals_conceded_per_match and clean_sheet_rate now come straight from
+    # champagne_results (champagne_index_by_team_season computes them too) —
+    # only discipline_index still needs its own query.
+    discipline = pd.read_sql(
         """
         SELECT team_id, season_name, competition_id,
                MAX(nb_in_group) AS matches,
-               SUM(yellow_cards + second_yellow_cards + direct_red_cards) AS cards,
-               SUM(goals_conceded) AS goals_conceded,
-               SUM(clean_sheets) AS clean_sheets
+               SUM(yellow_cards + second_yellow_cards + direct_red_cards) AS cards
         FROM player_performances
         GROUP BY team_id, season_name, competition_id
         """,
         conn,
     )
-    defensive["discipline_index"] = defensive["cards"] / defensive["matches"].replace(0, np.nan)
-    defensive["goals_conceded_per_match"] = (
-        defensive["goals_conceded"] / defensive["matches"].replace(0, np.nan)
-    )
-    defensive["clean_sheet_rate"] = defensive["clean_sheets"] / defensive["matches"].replace(0, np.nan)
+    discipline["discipline_index"] = discipline["cards"] / discipline["matches"].replace(0, np.nan)
 
     merged = champagne.merge(
-        defensive[["team_id", "season_name", "competition_id", "discipline_index",
-                   "goals_conceded_per_match", "clean_sheet_rate"]],
+        discipline[["team_id", "season_name", "competition_id", "discipline_index"]],
         on=["team_id", "season_name", "competition_id"], how="left",
     )
     merged = merged[~merged["team_id"].isin(reserve_youth)]

@@ -24,14 +24,18 @@ from pipeline.compute_predictions import build_ml_features, compute, fit_ml_mode
 class TargetTests(unittest.TestCase):
     def test_missing_year_is_not_next_season(self):
         rows = pd.DataFrame([
-            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="21/22", matches=38, champagne_index=2),
-            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="23/24", matches=38, champagne_index=3),
-            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="24/25", matches=38, champagne_index=4),
-            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="25/26", matches=3, champagne_index=6),
+            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="21/22", matches=38, champagne_index=2, total_goals=60, total_assists=16, total_goals_conceded=40, total_clean_sheets=10, goals_conceded_per_match=1.05, clean_sheet_rate=0.26),
+            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="23/24", matches=38, champagne_index=3, total_goals=90, total_assists=24, total_goals_conceded=35, total_clean_sheets=12, goals_conceded_per_match=0.92, clean_sheet_rate=0.32),
+            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="24/25", matches=38, champagne_index=4, total_goals=120, total_assists=32, total_goals_conceded=30, total_clean_sheets=14, goals_conceded_per_match=0.79, clean_sheet_rate=0.37),
+            dict(team_id=1, team_name="Club", competition_id="IT1", competition_name="Serie A", season_name="25/26", matches=3, champagne_index=6, total_goals=12, total_assists=6, total_goals_conceded=2, total_clean_sheets=1, goals_conceded_per_match=0.67, clean_sheet_rate=0.33),
         ])
-        spend = pd.DataFrame([dict(team_id=1, season_name=s, total_spend=1e6, attacking_spend=0) for s in rows.season_name])
+        spend = pd.DataFrame([
+            dict(team_id=1, season_name=s, total_spend=1e6, attacking_spend=0, midfield_spend=0,
+                 defensive_spend=0, goalkeeper_spend=0, total_sales=0, net_spend=1e6)
+            for s in rows.season_name
+        ])
         with patch("pipeline.compute_predictions.pd.read_sql", side_effect=[rows, spend]):
-            result, _ = compute(None, set())
+            result, _, _ = compute(None, set())
         targets = result.set_index("season_name").delta_index
         self.assertTrue(pd.isna(targets["21/22"]))
         self.assertEqual(targets["23/24"], 1)
@@ -107,6 +111,10 @@ class SourceTests(unittest.TestCase):
             path=pathlib.Path(directory)/"sample.csv"
             path.write_text("second,first\n2,1\n")
             with self.assertRaises(ValueError):validate(path,{"header":["first","second"]})
+
+    def test_goalkeeper_conceded_rate_keeps_fractional_goals(self):
+        query = (pathlib.Path(__file__).resolve().parents[1] / "sql/champagne_queries.sql").read_text()
+        self.assertIn("SUM(goals_conceded)::numeric / NULLIF(MAX(nb_in_group), 0)", query)
 
 
 if __name__ == "__main__":

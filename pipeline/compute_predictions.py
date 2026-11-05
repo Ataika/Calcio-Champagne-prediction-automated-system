@@ -26,13 +26,21 @@ from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
+try:
+    from . import feature_correlations
+except ImportError:
+    import feature_correlations
+
 MODELS_DIR = "/models"
 
 RESULT_COLUMNS = [
     "team_id", "team_name", "season_name", "season_key", "competition_id",
     "competition_name", "matches", "total_goals", "total_assists",
-    "champagne_index", "total_spend", "attacking_spend", "delta_index",
-    "predicted_next_index", "is_latest_season",
+    "total_goals_conceded", "total_clean_sheets", "goals_conceded_per_match",
+    "clean_sheet_rate", "net_index",
+    "champagne_index", "total_spend", "attacking_spend", "midfield_spend",
+    "defensive_spend", "goalkeeper_spend", "total_sales", "net_spend",
+    "delta_index", "predicted_next_index", "is_latest_season",
 ]
 
 # football-data.co.uk league code -> Transfermarkt competition_id, so match_results
@@ -104,11 +112,25 @@ def compute(conn, reserve_youth_ids):
     index_df["season_key"] = index_df["season_key"].astype(int)
 
     merged = index_df.merge(spend_df, on=["team_id", "season_name"], how="left")
-    merged[["total_spend", "attacking_spend"]] = merged[["total_spend", "attacking_spend"]].fillna(0)
+    spend_cols = ["total_spend", "attacking_spend", "midfield_spend", "defensive_spend",
+                  "goalkeeper_spend", "total_sales", "net_spend"]
+    merged[spend_cols] = merged[spend_cols].fillna(0)
+    merged[["total_goals_conceded", "total_clean_sheets", "goals_conceded_per_match",
+            "clean_sheet_rate"]] = merged[["total_goals_conceded", "total_clean_sheets",
+            "goals_conceded_per_match", "clean_sheet_rate"]].fillna(0)
+    # Computed from raw totals rather than the two already-rounded view columns
+    # (champagne_index, goals_conceded_per_match), so net_index isn't a difference
+    # of two independently rounded numbers.
+    match_count = merged["matches"].astype(float)
+    net_raw = (
+        merged["total_goals"] + merged["total_assists"] - merged["total_goals_conceded"]
+    ) / match_count
+    merged["net_index"] = net_raw.where(match_count > 0).round(2)
 
     merged = merged.sort_values(["team_id", "competition_id", "season_key"])
     group = merged.groupby(["team_id", "competition_id"])
     merged["next_champagne_index"] = group["champagne_index"].shift(-1)
+    merged["next_goals_conceded_per_match"] = group["goals_conceded_per_match"].shift(-1)
     merged["next_season_key"] = group["season_key"].shift(-1)
     merged["next_matches"] = group["matches"].shift(-1)
     # A return after relegation is not "next season". Partial snapshots must not
@@ -120,6 +142,12 @@ def compute(conn, reserve_youth_ids):
         & (merged["next_matches"].fillna(0) >= minimum)
     )
     merged["delta_index"] = (merged["next_champagne_index"] - merged["champagne_index"]).where(valid_pair)
+    # Defensive mirror of delta_index: does this season's conceded-goals rate
+    # improve or worsen next season? Lower is better, so this is the quantity
+    # defensive_spend is tested against below (the sign is flipped from delta_index).
+    merged["delta_goals_conceded_per_match"] = (
+        merged["next_goals_conceded_per_match"] - merged["goals_conceded_per_match"]
+    ).where(valid_pair)
     merged["is_latest_season"] = group["season_key"].transform("max") == merged["season_key"]
 
     # Fit the trend only on rows with a real next season, a reasonable sample of
@@ -143,10 +171,27 @@ def compute(conn, reserve_youth_ids):
         + intercept
     ).round(2)
 
-    return merged, (float(slope), float(intercept), float(r_value), float(p_value), len(train))
+    # Defensive mirror of the spend->delta_index trend above: does spending on
+    # defenders predict a *drop* in next-season goals conceded per match? Same
+    # eligibility filter (train), different target column.
+    defense_train = train.dropna(subset=["delta_goals_conceded_per_match"])
+    if len(defense_train) >= 20:
+        d_slope, d_intercept, d_r, d_p, _ = stats.linregress(
+            defense_train["defensive_spend"].astype(float),
+            defense_train["delta_goals_conceded_per_match"].astype(float),
+        )
+    else:
+        d_slope, d_intercept, d_r, d_p = 0.0, 0.0, 0.0, 1.0
+    defense_spend_model = (float(d_slope), float(d_intercept), float(d_r), float(d_p), len(defense_train))
+
+    return merged, (float(slope), float(intercept), float(r_value), float(p_value), len(train)), defense_spend_model
 
 
 ML_FEATURE_COLUMNS = ["champagne_index", "total_spend", "attacking_spend", "squad_avg_age", "market_value_change"]
+# Attack-only (above) vs. attack+defense: same five inputs plus goals conceded,
+# discipline and net spend. Evaluation-only — the Lab still serves the deployed
+# ML_FEATURE_COLUMNS model so its documented contract (docs/LAB.md) is unchanged.
+ML_FEATURE_COLUMNS_AUGMENTED = ML_FEATURE_COLUMNS + ["goals_conceded_per_match", "discipline_index", "net_spend"]
 
 
 def build_ml_features(conn, merged):
@@ -200,18 +245,38 @@ def build_ml_features(conn, merged):
     return merged.merge(squad.drop(columns="season_key"), on=["team_id", "season_name"], how="left", validate="many_to_one")
 
 
-def fit_ml_model(features, reserve_youth_ids):
-    """RandomForestRegressor predicting next-season champagne_index change from the
-    richer feature set, vs. the single-feature linear baseline in compute()."""
+def build_discipline_index(conn):
+    """Cards per match, per team-season-competition — the same query
+    club_style_clustering.py uses, pulled out here so compute_predictions.py
+    can also feed discipline_index into the augmented model (fit_ml_model)
+    and the feature correlation matrix without a third copy of this SQL."""
+    discipline = pd.read_sql("""
+        SELECT team_id, season_name, competition_id,
+               MAX(nb_in_group) AS matches,
+               SUM(yellow_cards + second_yellow_cards + direct_red_cards) AS cards
+        FROM player_performances
+        GROUP BY team_id, season_name, competition_id
+    """, conn)
+    discipline["discipline_index"] = discipline["cards"] / discipline["matches"].replace(0, float("nan"))
+    return discipline[["team_id", "season_name", "competition_id", "discipline_index"]]
+
+
+def fit_ml_model(features, reserve_youth_ids, feature_columns=ML_FEATURE_COLUMNS):
+    """RandomForestRegressor predicting next-season champagne_index change from
+    `feature_columns`, vs. the single-feature linear baseline in compute().
+    Called twice from main(): once with the deployed 5-feature set
+    (ML_FEATURE_COLUMNS, unchanged — this is the model the Lab serves), once
+    with ML_FEATURE_COLUMNS_AUGMENTED to test whether adding defense/discipline
+    features actually helps (the attack-only vs. attack+defense showdown)."""
     train = features.dropna(subset=["delta_index"])
     train = train[train["matches"].fillna(0) >= 5]
     train = train[~train["team_id"].isin(reserve_youth_ids)]
-    train = train.dropna(subset=ML_FEATURE_COLUMNS)
+    train = train.dropna(subset=feature_columns)
 
     if len(train) < 50:
         return None
 
-    X = train[ML_FEATURE_COLUMNS].astype(float)
+    X = train[feature_columns].astype(float)
     y = train["delta_index"].astype(float)
     # Hold out recent seasons together; never randomly mix future and past.
     cutoff = int(train["season_key"].quantile(0.8))
@@ -223,7 +288,7 @@ def fit_ml_model(features, reserve_youth_ids):
     model.fit(X_train, y_train)
     predictions = model.predict(X_test)
     r2 = float(r2_score(y_test, predictions))
-    importances = dict(zip(ML_FEATURE_COLUMNS, model.feature_importances_.astype(float)))
+    importances = dict(zip(feature_columns, model.feature_importances_.astype(float)))
 
     # Separate model trained on ALL available rows (not just the train split) for
     # the Lab tab's live predictions — the R^2 above is still measured on the
@@ -233,7 +298,7 @@ def fit_ml_model(features, reserve_youth_ids):
     feature_ranges = {
         col: {"min": float(X[col].min()), "median": float(X[col].median()), "max": float(X[col].max()),
               "p01": float(X[col].quantile(0.01)), "p99": float(X[col].quantile(0.99))}
-        for col in ML_FEATURE_COLUMNS
+        for col in feature_columns
     }
     evaluation = {
         "split": "chronological season holdout", "test_from_season": cutoff,
@@ -271,7 +336,7 @@ def compute_standings(conn, champagne_results):
     """
     matches = pd.read_sql("SELECT * FROM match_results", conn)
     if matches.empty:
-        return pd.DataFrame(columns=STANDINGS_COLUMNS), None
+        return pd.DataFrame(columns=STANDINGS_COLUMNS), None, [], pd.DataFrame()
 
     home = matches.rename(columns={
         "home_team_id": "team_id", "away_team_id": "opponent_id",
@@ -288,6 +353,22 @@ def compute_standings(conn, champagne_results):
     away["win"] = away["result"] == "A"
     away["draw"] = away["result"] == "D"
     away["loss"] = away["result"] == "H"
+
+    # Home/away split (Issue: home advantage isn't broken out anywhere else) —
+    # same home/away frames as the combined table below, grouped before they're
+    # concatenated together.
+    home_split = home.groupby(["league_code", "season_name", "team_id"]).agg(
+        home_played=("win", "size"), home_goals_for=("goals_for", "sum"), home_goals_against=("goals_against", "sum"),
+    ).reset_index()
+    away_split = away.groupby(["league_code", "season_name", "team_id"]).agg(
+        away_played=("win", "size"), away_goals_for=("goals_for", "sum"), away_goals_against=("goals_against", "sum"),
+    ).reset_index()
+    home_away = home_split.merge(away_split, on=["league_code", "season_name", "team_id"], how="outer")
+    home_away["competition_id"] = home_away["league_code"].map(LEAGUE_TO_COMPETITION)
+    for venue in ("home", "away"):
+        played = home_away[f"{venue}_played"].replace(0, float("nan"))
+        home_away[f"{venue}_goals_for_per_match"] = (home_away[f"{venue}_goals_for"] / played).round(2)
+        home_away[f"{venue}_goals_against_per_match"] = (home_away[f"{venue}_goals_against"] / played).round(2)
 
     cols = ["league_code", "season_name", "team_id", "goals_for", "goals_against", "win", "draw", "loss"]
     long = pd.concat([home[cols], away[cols]], ignore_index=True)
@@ -321,17 +402,38 @@ def compute_standings(conn, champagne_results):
     comparable = (enriched["played"] >= 30) & (enriched["matches"] >= 0.8 * enriched["played"])
     enriched.loc[~comparable, "champagne_index"] = float("nan")
     corr_stats = None
-    sample = enriched.dropna(subset=["champagne_index", "position"])
+    sample = enriched.dropna(subset=["champagne_index", "position"]).copy()
     if len(sample) >= 20:
         slope, intercept, r_value, p_value, _ = stats.linregress(
             sample["champagne_index"].astype(float), sample["position"].astype(float)
         )
         corr_stats = (float(r_value), float(p_value), len(sample), float(slope), float(intercept))
 
-    return enriched[STANDINGS_COLUMNS], corr_stats
+    # Horserace (Issue: which single number actually predicts final position
+    # best — the attacking-only index, real goal difference, or points?). Same
+    # `sample` rows for all three, so n is directly comparable across metrics.
+    sample["goal_diff_per_match"] = sample["goal_diff"] / sample["played"].replace(0, float("nan"))
+    sample["points_per_match"] = sample["points"] / sample["played"].replace(0, float("nan"))
+    predictor_comparison = []
+    for metric in ("champagne_index", "goal_diff_per_match", "points_per_match"):
+        sub = sample.dropna(subset=[metric, "position"])
+        if len(sub) >= 20:
+            _, _, r, p, _ = stats.linregress(sub[metric].astype(float), sub["position"].astype(float))
+            predictor_comparison.append({"metric": metric, "r": float(r), "p": float(p), "n": len(sub)})
+        else:
+            predictor_comparison.append({"metric": metric, "r": None, "p": None, "n": len(sub)})
+
+    return enriched[STANDINGS_COLUMNS], corr_stats, predictor_comparison, home_away
 
 
-def write_standings(conn, standings_df, corr_stats):
+HOME_AWAY_COLUMNS = [
+    "league_code", "competition_id", "season_name", "team_id",
+    "home_played", "home_goals_for_per_match", "home_goals_against_per_match",
+    "away_played", "away_goals_for_per_match", "away_goals_against_per_match",
+]
+
+
+def write_standings(conn, standings_df, corr_stats, predictor_comparison, home_away_df):
     with conn.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS league_standings;")
         cur.execute("""
@@ -365,6 +467,52 @@ def write_standings(conn, standings_df, corr_stats):
                 computed_at TIMESTAMP DEFAULT now()
             );
         """)
+        cur.execute("DROP TABLE IF EXISTS position_predictor_comparison;")
+        cur.execute("""
+            CREATE TABLE position_predictor_comparison (
+                metric TEXT,
+                r_value NUMERIC,
+                p_value NUMERIC,
+                n_observations INTEGER,
+                computed_at TIMESTAMP DEFAULT now()
+            );
+        """)
+        cur.execute("DROP TABLE IF EXISTS home_away_splits;")
+        cur.execute("""
+            CREATE TABLE home_away_splits (
+                league_code TEXT,
+                competition_id TEXT,
+                season_name TEXT,
+                team_id INTEGER,
+                home_played INTEGER,
+                home_goals_for_per_match NUMERIC,
+                home_goals_against_per_match NUMERIC,
+                away_played INTEGER,
+                away_goals_for_per_match NUMERIC,
+                away_goals_against_per_match NUMERIC
+            );
+        """)
+        for metric, r_value, p_value, n in (
+            (m["metric"], m["r"], m["p"], m["n"]) for m in predictor_comparison
+        ):
+            cur.execute(
+                "INSERT INTO position_predictor_comparison (metric, r_value, p_value, n_observations) "
+                "VALUES (%s, %s, %s, %s)",
+                (metric, r_value, p_value, n),
+            )
+        if not home_away_df.empty:
+            home_away_frame = home_away_df[HOME_AWAY_COLUMNS].astype(object).where(
+                pd.notnull(home_away_df[HOME_AWAY_COLUMNS]), None
+            )
+            execute_values(
+                cur,
+                f"INSERT INTO home_away_splits ({', '.join(HOME_AWAY_COLUMNS)}) VALUES %s",
+                home_away_frame.values.tolist(),
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_has_team_season "
+                "ON home_away_splits (team_id, season_name, competition_id);"
+            )
     if standings_df.empty:
         conn.commit()
         print("[pipeline] no match_results found, skipping league_standings", flush=True)
@@ -393,7 +541,7 @@ def write_standings(conn, standings_df, corr_stats):
     print(f"[pipeline] wrote {len(standings_df):,} rows to league_standings", flush=True)
 
 
-def write_results(conn, merged, model_stats):
+def write_results(conn, merged, model_stats, defense_spend_model_stats):
     with conn.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS champagne_results;")
         cur.execute("""
@@ -407,9 +555,19 @@ def write_results(conn, merged, model_stats):
                 matches INTEGER,
                 total_goals NUMERIC,
                 total_assists INTEGER,
+                total_goals_conceded NUMERIC,
+                total_clean_sheets NUMERIC,
+                goals_conceded_per_match NUMERIC,
+                clean_sheet_rate NUMERIC,
+                net_index NUMERIC,
                 champagne_index NUMERIC,
                 total_spend NUMERIC,
                 attacking_spend NUMERIC,
+                midfield_spend NUMERIC,
+                defensive_spend NUMERIC,
+                goalkeeper_spend NUMERIC,
+                total_sales NUMERIC,
+                net_spend NUMERIC,
                 delta_index NUMERIC,
                 predicted_next_index NUMERIC,
                 is_latest_season BOOLEAN,
@@ -418,6 +576,16 @@ def write_results(conn, merged, model_stats):
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS champagne_model (
+                slope NUMERIC,
+                intercept NUMERIC,
+                r_value NUMERIC,
+                p_value NUMERIC,
+                n_observations INTEGER,
+                computed_at TIMESTAMP DEFAULT now()
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS defense_spend_model (
                 slope NUMERIC,
                 intercept NUMERIC,
                 r_value NUMERIC,
@@ -442,13 +610,26 @@ def write_results(conn, merged, model_stats):
             "VALUES (%s, %s, %s, %s, %s)",
             (slope, intercept, r_value, p_value, n),
         )
+        cur.execute("DELETE FROM defense_spend_model;")
+        d_slope, d_intercept, d_r, d_p, d_n = defense_spend_model_stats
+        cur.execute(
+            "INSERT INTO defense_spend_model (slope, intercept, r_value, p_value, n_observations) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (d_slope, d_intercept, d_r, d_p, d_n),
+        )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_cr_team_season ON champagne_results (team_id, season_name);"
         )
     conn.commit()
 
 
-def write_ml_model(conn, ml_result):
+def write_ml_model(conn, ml_result, augmented_result=None):
+    """Writes the deployed attack-only model (unchanged row shape/behavior —
+    the Lab and docs/LAB.md's documented numbers read this), plus, when given,
+    a second row for the attack+defense showdown model under
+    model_variant='attack_defense'. Never both NULL/omitted at once so a
+    caller that only ever asks for `model_variant='attack_only'` keeps
+    working exactly as before."""
     with conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS champagne_model_ml (
@@ -460,11 +641,19 @@ def write_ml_model(conn, ml_result):
         """)
         cur.execute("DELETE FROM champagne_model_ml;")
         cur.execute("ALTER TABLE champagne_model_ml ADD COLUMN IF NOT EXISTS evaluation TEXT;")
+        cur.execute("ALTER TABLE champagne_model_ml ADD COLUMN IF NOT EXISTS model_variant TEXT DEFAULT 'attack_only';")
         if ml_result:
             r2, n, importances, _model, _ranges, evaluation = ml_result
             cur.execute(
-                "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation) "
-                "VALUES (%s, %s, %s, %s)",
+                "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation, model_variant) "
+                "VALUES (%s, %s, %s, %s, 'attack_only')",
+                (r2, n, json.dumps(importances), json.dumps(evaluation)),
+            )
+        if augmented_result:
+            r2, n, importances, _model, _ranges, evaluation = augmented_result
+            cur.execute(
+                "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation, model_variant) "
+                "VALUES (%s, %s, %s, %s, 'attack_defense')",
                 (r2, n, json.dumps(importances), json.dumps(evaluation)),
             )
     conn.commit()
@@ -491,22 +680,30 @@ def main():
     conn = connect()
     build_views(conn)
     reserve_youth_ids = load_reserve_youth_team_ids(conn)
-    merged, model_stats = compute(conn, reserve_youth_ids)
+    merged, model_stats, defense_spend_model_stats = compute(conn, reserve_youth_ids)
     aggregation_elapsed = time.perf_counter() - started
-    write_results(conn, merged, model_stats)
+    write_results(conn, merged, model_stats, defense_spend_model_stats)
     slope, intercept, r_value, p_value, n = model_stats
+    d_slope, d_intercept, d_r, d_p, d_n = defense_spend_model_stats
     print(
         f"[pipeline] wrote {len(merged):,} rows to champagne_results; "
         f"trend (first-team only): slope={slope:.6g} intercept={intercept:.3f} "
-        f"r={r_value:.3f} n={n}",
+        f"r={r_value:.3f} n={n}; "
+        f"defensive-spend trend: slope={d_slope:.6g} r={d_r:.3f} n={d_n}",
         flush=True,
     )
 
     ml_started = time.perf_counter()
     ml_features = build_ml_features(conn, merged)
+    discipline = build_discipline_index(conn)
+    ml_features = ml_features.merge(discipline, on=["team_id", "season_name", "competition_id"], how="left")
     write_lab_features(conn, ml_features)
     ml_result = fit_ml_model(ml_features, reserve_youth_ids)
-    write_ml_model(conn, ml_result)
+    # Evaluation-only showdown: does adding defense/discipline/net-spend features
+    # to the exact same inputs actually improve the test R^2? The deployed Lab
+    # model above (ml_result) is unaffected either way.
+    augmented_result = fit_ml_model(ml_features, reserve_youth_ids, feature_columns=ML_FEATURE_COLUMNS_AUGMENTED)
+    write_ml_model(conn, ml_result, augmented_result)
     if ml_result:
         r2, n_ml, importances, deploy_model, feature_ranges, evaluation = ml_result
         top_feature = max(importances, key=importances.get)
@@ -519,11 +716,19 @@ def main():
         print(f"[pipeline] saved Lab model to {MODELS_DIR}/champagne_rf_model.joblib", flush=True)
     else:
         print("[pipeline] not enough complete rows to fit the RandomForest model, skipping", flush=True)
+    if augmented_result:
+        aug_r2, aug_n, _imp, _m, _r, _e = augmented_result
+        base_r2 = ml_result[0] if ml_result else float("nan")
+        print(
+            f"[pipeline] attack-only vs. attack+defense showdown: "
+            f"attack-only R^2={base_r2:.3f} attack+defense R^2={aug_r2:.3f} n={aug_n}",
+            flush=True,
+        )
 
     ml_elapsed = time.perf_counter() - ml_started
     standings_started = time.perf_counter()
-    standings_df, corr_stats = compute_standings(conn, merged)
-    write_standings(conn, standings_df, corr_stats)
+    standings_df, corr_stats, predictor_comparison, home_away_df = compute_standings(conn, merged)
+    write_standings(conn, standings_df, corr_stats, predictor_comparison, home_away_df)
     if corr_stats:
         r_value, p_value, n, _slope, _intercept = corr_stats
         print(
@@ -531,6 +736,21 @@ def main():
             f"p={p_value:.4f} n={n}",
             flush=True,
         )
+
+    # Full feature correlation matrix + collinearity flags (Issue: 20 ideas —
+    # correlation/SHAP/importance analysis "to our features in all dataset").
+    # Needs real league position, which only exists once standings are computed.
+    correlation_frame = ml_features
+    if not standings_df.empty:
+        correlation_frame = ml_features.merge(
+            standings_df[["team_id", "season_name", "competition_id", "position"]],
+            on=["team_id", "season_name", "competition_id"], how="left",
+        )
+    pairs, targets = feature_correlations.compute(correlation_frame)
+    feature_correlations.write(conn, pairs, targets)
+    dropped = [p for p in pairs if p["collinear"]]
+    print(f"[pipeline] feature correlation matrix: {len(pairs)} pairs, "
+          f"{len(dropped)} flagged collinear (|r|>{feature_correlations.COLLINEARITY_THRESHOLD})", flush=True)
 
     conn.close()
     output = Path(os.getenv("RESULTS_DIR", "/results"))

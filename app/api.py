@@ -93,7 +93,7 @@ def exists(table):
 
 def latest(table):
     # Callers supply only internal constant names, never request parameters.
-    if table not in {"champagne_model", "champagne_model_ml", "champagne_vs_position_model", "transfer_fee_model"}:
+    if table not in {"champagne_model", "champagne_model_ml", "champagne_vs_position_model", "transfer_fee_model", "defense_spend_model"}:
         raise ValueError("Unknown model table")
     if not exists(table):
         return None
@@ -181,10 +181,21 @@ def season_rows(competition, season, min_matches=15):
     return read("""
         SELECT cr.*, ls.position, ls.points, ls.played, ls.wins, ls.draws, ls.losses,
                ls.goals_for, ls.goals_against, ls.goal_diff,
+               ls.goals_for_per_match, ls.goals_against_per_match,
+               ls.attack_rank, ls.defense_rank,
                prev.champagne_index AS previous_index,
                cr.champagne_index - prev.champagne_index AS change_from_previous
         FROM champagne_results cr
-        LEFT JOIN league_standings ls ON ls.team_id=cr.team_id
+        LEFT JOIN (
+            SELECT standings.*,
+                   goals_for::numeric / NULLIF(played, 0) AS goals_for_per_match,
+                   goals_against::numeric / NULLIF(played, 0) AS goals_against_per_match,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_for::numeric / NULLIF(played, 0) DESC) AS attack_rank,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_against::numeric / NULLIF(played, 0) ASC) AS defense_rank
+            FROM league_standings AS standings
+        ) ls ON ls.team_id=cr.team_id
             AND ls.competition_id=cr.competition_id AND ls.season_name=cr.season_name
         LEFT JOIN champagne_results prev ON prev.team_id=cr.team_id
             AND prev.competition_id=cr.competition_id AND prev.season_key=cr.season_key-1
@@ -281,8 +292,21 @@ def club(team_id: int, competition: str = "IT1", season: str = "24/25"):
     if team_id <= 0:
         raise HTTPException(422, "Invalid club.")
     rows = read("""
-        SELECT cr.*, ls.position, ls.points FROM champagne_results cr
-        LEFT JOIN league_standings ls ON cr.team_id=ls.team_id
+        SELECT cr.*, ls.position, ls.points, ls.played,
+               ls.goals_for, ls.goals_against, ls.goal_diff,
+               ls.goals_for_per_match, ls.goals_against_per_match,
+               ls.attack_rank, ls.defense_rank
+        FROM champagne_results cr
+        LEFT JOIN (
+            SELECT standings.*,
+                   goals_for::numeric / NULLIF(played, 0) AS goals_for_per_match,
+                   goals_against::numeric / NULLIF(played, 0) AS goals_against_per_match,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_for::numeric / NULLIF(played, 0) DESC) AS attack_rank,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_against::numeric / NULLIF(played, 0) ASC) AS defense_rank
+            FROM league_standings AS standings
+        ) ls ON cr.team_id=ls.team_id
             AND cr.competition_id=ls.competition_id AND cr.season_name=ls.season_name
         WHERE cr.team_id=%s AND cr.competition_id=%s ORDER BY cr.season_key
     """, (team_id, competition))
@@ -291,8 +315,42 @@ def club(team_id: int, competition: str = "IT1", season: str = "24/25"):
     current = next((r for r in rows if r["season_name"] == season), None)
     clusters = read("SELECT * FROM club_style_clusters WHERE team_id=%s AND season_name=%s AND competition_name=%s",
                     (team_id, season, LEAGUES[competition]["name"])) if exists("club_style_clusters") else []
+    home_away_rows = read("""
+        SELECT home_played, home_goals_for_per_match, home_goals_against_per_match,
+               away_played, away_goals_for_per_match, away_goals_against_per_match
+        FROM home_away_splits WHERE team_id=%s AND season_name=%s AND competition_id=%s
+    """, (team_id, season, competition)) if exists("home_away_splits") else []
     return {"team_name": rows[-1]["team_name"], "history": rows, "current": current,
-            "style": clusters[0] if clusters else None}
+            "style": clusters[0] if clusters else None,
+            "home_away": home_away_rows[0] if home_away_rows else None}
+
+
+@app.get("/api/clubs/{team_id}/players")
+def club_players(team_id: int, competition: str = "IT1", season: str = "24/25"):
+    """Per-90 rates for the club's roster that season. goals_conceded_per90/
+    clean_sheets_per90 are only meaningful for goalkeepers in this source —
+    player_performances.goals_conceded/clean_sheets are populated on
+    goalkeeper rows only, outfield players always read zero there."""
+    scope(competition, season)
+    if team_id <= 0:
+        raise HTTPException(422, "Invalid club.")
+    rows = read("""
+        SELECT pp.player_id, pr.player_name, pr.main_position, pp.minutes_played,
+               ROUND(pp.goals * 90.0 / NULLIF(pp.minutes_played, 0), 2) AS goals_per90,
+               ROUND(pp.assists * 90.0 / NULLIF(pp.minutes_played, 0), 2) AS assists_per90,
+               CASE WHEN pr.main_position = 'Goalkeeper'
+                    THEN ROUND(pp.goals_conceded * 90.0 / NULLIF(pp.minutes_played, 0), 2) END
+                    AS goals_conceded_per90,
+               CASE WHEN pr.main_position = 'Goalkeeper'
+                    THEN ROUND(pp.clean_sheets * 90.0 / NULLIF(pp.minutes_played, 0), 3) END
+                    AS clean_sheets_per90
+        FROM player_performances pp
+        LEFT JOIN player_profiles pr ON pr.player_id = pp.player_id
+        WHERE pp.team_id=%s AND pp.season_name=%s AND pp.competition_id=%s AND pp.minutes_played >= 90
+        ORDER BY pp.minutes_played DESC
+        LIMIT 25
+    """, (team_id, season, competition))
+    return {"team_id": team_id, "season_name": season, "competition_id": competition, "players": rows}
 
 
 _model_lock = threading.Lock()
@@ -381,6 +439,7 @@ def project():
     return clean({"tables": counts, "coverage": coverage, "benchmark": benchmark,
                   "linear": latest("champagne_model"), "ml": model,
                   "position": latest("champagne_vs_position_model"),
+                  "defense_spend": latest("defense_spend_model"),
                   "transfer": latest("transfer_fee_model"),
                   "course_source_verified": True})
 

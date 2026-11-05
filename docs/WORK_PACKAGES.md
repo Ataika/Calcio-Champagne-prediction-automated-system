@@ -49,9 +49,10 @@ The application is runnable, but technical checks do not complete these steps:
   completed by a rerun on the original laptop.
 - Resolve the primary source's licence before claiming the course's clear-licence
   condition is met; see [source provenance](SOURCES.md).
-- Prepare the actual slides, rehearse the 15-minute presentation and questions,
-  and record the recommended two-minute backup demo. The rehearsal route in
-  [DEFENSE.md](DEFENSE.md) is a guide, not an existing recording or slide deck.
+- Rehearse the prepared 15-minute presentation and examiner questions with the
+  actual participants, then record the recommended two-minute backup demo. The
+  generated slide deck is in the defense package; practice and the video remain
+  to be completed by the team.
 
 Historical commits and benchmark results are preserved. No dates, independent
 contributors, second-machine checks or licence confirmations are fabricated.

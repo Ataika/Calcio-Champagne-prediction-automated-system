@@ -69,6 +69,24 @@ def main():
         assert len(season["rows"]) in (18, 20)
         assert all(row["matches"] >= 30 for row in season["rows"])
         assert len({row["team_id"] for row in season["rows"]}) == len(season["rows"])
+        for row in season["rows"]:
+            if row["played"]:
+                assert row["goals_for"] - row["goals_against"] == row["goal_diff"]
+                assert abs(row["goals_for_per_match"] - row["goals_for"] / row["played"]) < 1e-9
+                assert abs(row["goals_against_per_match"] - row["goals_against"] / row["played"]) < 1e-9
+                assert row["attack_rank"] is not None and row["defense_rank"] is not None
+            else:
+                assert row["goals_for"] is None and row["goals_against"] is None
+                assert row["goal_diff"] is None and row["attack_rank"] is None and row["defense_rank"] is None
+            assert abs(row["goals_conceded_per_match"] - round(row["total_goals_conceded"] / row["matches"], 2)) < 1e-9
+            assert abs(row["clean_sheet_rate"] - round(row["total_clean_sheets"] / row["matches"], 3)) < 1e-9
+            if row["played"]:
+                assert row["attack_rank"] == 1 + sum(
+                    other["goals_for_per_match"] > row["goals_for_per_match"] for other in season["rows"]
+                )
+                assert row["defense_rank"] == 1 + sum(
+                    other["goals_against_per_match"] < row["goals_against_per_match"] for other in season["rows"]
+                )
         comparable = [r for r in season["rows"] if r.get("position") is not None
                       and (r.get("played") or 0) >= 30 and r["matches"] >= .8 * r["played"]]
         assert season["position_correlation"]["n"] == len(comparable)
@@ -78,10 +96,18 @@ def main():
         analysis = fetch(f"/api/analysis?competition={league['id']}&season=24%2F25")
         assert all(row["season_key"] < 2024 for row in analysis["rows"]), "Partial 25/26 must not be a target"
         assert len({(row["team_id"], row["season_name"]) for row in analysis["rows"]}) == len(analysis["rows"])
-        checks.append(f"{league['id']}: complete season, valid targets and optional head-to-head")
+        checks.append(f"{league['id']}: GF/GA/GD, per-match ranks, complete season and head-to-head")
     chosen = fetch("/api/season?competition=IT1&season=24%2F25")["rows"][0]
     club = fetch(f"/api/clubs/{chosen['team_id']}?competition=IT1&season=24%2F25")
     assert all(row["competition_id"] == "IT1" for row in club["history"])
+    inter = fetch("/api/clubs/46?competition=IT1&season=24%2F25")["current"]
+    if inter["played"]:
+        assert (inter["goals_for"], inter["goals_against"], inter["goal_diff"]) == (79, 35, 44)
+        assert (inter["attack_rank"], inter["defense_rank"]) == (1, 2)
+    else:
+        assert inter["goals_for"] is None and inter["attack_rank"] is None
+    assert inter["total_goals_conceded"] == 35
+    assert inter["goals_conceded_per_match"] == 0.92
     config = fetch(f"/api/lab/config?team_id={chosen['team_id']}&competition=IT1&season=24%2F25")
     assert not config["missing"]
     assert config["features"]["champagne_index"] == chosen["champagne_index"]
@@ -108,6 +134,8 @@ def main():
     assert len(exported) == 20
     project = fetch("/api/project")
     assert project["course_source_verified"]
+    assert project["defense_spend"] and project["defense_spend"]["n_observations"] > 0
+    assert project["defense_spend"]["p_value"] > 0.05
     if project["position"]:
         assert project["position"]["n_observations"] > 0
     assert project["ml"]["evaluation"]["test_rows"] > 0

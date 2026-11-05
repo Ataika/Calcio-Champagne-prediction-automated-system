@@ -216,6 +216,9 @@ try {
       await evaluate("document.querySelectorAll('.comparison-heading').length"),
       2,
     );
+    const comparisonLabels = await evaluate("Array.from(document.querySelectorAll('.comparison-table tbody tr td:first-child'), cell => cell.textContent.trim())");
+    for (const label of ["League goals scored · GF", "League goals conceded · GA", "League goal difference · GF − GA", "Attacking rank · goals per match", "Defensive rank · fewest conceded per match"])
+      assert.ok(comparisonLabels.includes(label), `Season comparison includes ${label}`);
     assert.ok(await evaluate("document.querySelector('.trend-svg')!==null"));
     assert.ok(await evaluate("document.querySelector('#head-to-head')!==null"));
   });
@@ -302,6 +305,11 @@ try {
       assert.ok(
         await evaluate(
           "document.querySelector('#app').innerText.includes('R²')",
+        ),
+      );
+      assert.ok(
+        await evaluate(
+          "document.querySelector('#findings').innerText.toLowerCase().includes('defender spending') && document.querySelector('#findings').innerText.toLowerCase().includes('no useful linear signal')",
         ),
       );
       const measurementText = await evaluate("document.querySelector('#measurements').innerText.toLowerCase()");

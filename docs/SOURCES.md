@@ -72,6 +72,19 @@ replacement before existing matches are changed. Removing optional match input
 clears its previous stored rows on the next loader run, so stale standings or
 head-to-head results are not presented as current enrichment.
 
+The loaded snapshot currently has all 25 league-season CSVs (five leagues ×
+five seasons), totaling 8,908 completed matches. These scorelines support actual
+GF, GA, GD and per-match scoring/conceding ranks in season comparisons. The
+source schema has no expected-goals (xG) field, so xG is not reported. The
+primary Transfermarkt player table includes `goals_conceded` and `clean_sheets`
+at player level. Pipeline totals are retained as a distinct cross-check, not
+substituted for complete club match totals. On 388 adequately covered top-five
+club-seasons, Transfermarkt goalkeeper goals-conceded totals exactly match the
+independent scoreline totals in 366 cases (94.3%); clean-sheet totals match in
+269 (69.3%). The lower clean-sheet agreement is why that field is not used for a
+league defensive ranking. This cross-check is descriptive; the interface's
+head-to-head and league ranks use actual match scores.
+
 Final positions are calculated using points and goal difference; official
 deductions and league-specific tie-break rules are not represented. Transfermarkt
 25/26 is a partial snapshot. Its index is never correlated with full final

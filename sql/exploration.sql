@@ -120,7 +120,7 @@ SELECT
     competition_id,
     competition_name,
     MAX(nb_in_group) AS matches,
-    ROUND(SUM(goals_conceded) / NULLIF(MAX(nb_in_group), 0), 2) AS goals_conceded_per_match,
+    ROUND(SUM(goals_conceded)::numeric / NULLIF(MAX(nb_in_group), 0), 2) AS goals_conceded_per_match,
     ROUND(SUM(clean_sheets)::numeric / NULLIF(MAX(nb_in_group), 0), 3) AS clean_sheet_rate
 FROM player_performances
 GROUP BY team_id, team_name, season_name, competition_id, competition_name;

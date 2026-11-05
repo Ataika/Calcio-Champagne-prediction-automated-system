@@ -15,9 +15,13 @@ everything else is checked against it. Built in `sql/champagne_queries.sql`
 Lower leagues often don't track cards at all, so a near-zero value can mean
 either "very disciplined" or "no data" — see **data-sparse** below.
 
-**Defensive Solidity** — two numbers, the defensive mirror of Champagne Index:
-`goals_conceded_per_match` (lower is better) and `clean_sheet_rate` (higher is
-better). Same data-sparsity caveat as Discipline Index.
+**Transfermarkt goalkeeper defensive totals** — `goals_conceded` and
+`clean_sheets` aggregated from the primary player-season table. Their per-match
+rate uses the Transfermarkt group match proxy. This is a separate source from
+the completed-match league table and should be labeled as such. In 388 adequately
+covered top-five club-seasons, goalkeeper conceded totals exactly match the
+scoreline totals in 366 (94.3%); clean-sheet totals match in 269 (69.3%). The
+latter is not used as a league ranking.
 
 **Spend efficiency** — `champagne_index / (total_spend / 1,000,000)`. "Index
 points per €1M spent on incoming transfers." High = getting a lot of
@@ -35,6 +39,29 @@ diamond marker.
 column that happens to be constant across all of a team's players in the same
 team+season+competition group. The closest available proxy, since the main
 dataset has no match-by-match table.
+
+**Goals for / goals against (`GF` / `GA`)** — season totals computed from
+completed home/away scores in the optional football-data.co.uk match source.
+**Goal difference (`GD`)** is `GF − GA`. These are actual league score totals,
+separate from Transfermarkt's player goal/assist totals used in the Champagne
+Index.
+
+**Attacking rank** — `RANK()` within the same league and season by goals scored
+per completed match, descending. **Defensive rank** uses goals conceded per
+completed match, ascending (fewest conceded is rank 1). Per-match rates make
+the ordering comparable when a season is incomplete; tied rates share a rank.
+These are score-based league rankings, not xG, tactical ratings or measures of
+chance quality. The available match source has no xG field.
+
+**Net index** (`net_index`) — `(player goals + assists − Transfermarkt goalkeeper
+goals conceded) / Transfermarkt source matches`. This optional pipeline measure
+combines two event types from the same seasonal source. It is exploratory and is
+not substituted for actual league GD.
+
+**Defensive-spend trend** — Pearson correlation between incoming defender fees
+and the next consecutive season's change in Transfermarkt goalkeeper goals
+conceded per source match. Current snapshot: `r = 0.004047`, `p = 0.426997`,
+`n = 38,531`; this shows no useful linear association in this sample.
 
 ## Filters and gotchas
 

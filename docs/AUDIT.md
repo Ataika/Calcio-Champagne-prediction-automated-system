@@ -125,3 +125,24 @@ checks pass; loader and pipeline exit successfully. **37 regression tests,
 desktop and 390px layouts, source-dependent meeting counts and missing coverage.
 Acquisition failures are exercised with fake HTTP responses, without source
 downloads or modifications to the prepared inputs.
+
+## 5 November 2026 — season defense and attack comparison
+
+The season comparison now shows score-derived goals for, goals against, goal
+difference and per-match attacking/defensive league ranks; the direct meeting
+block stays separate. Ranks are within the selected league and season. For
+Inter/Milan in Serie A 24/25 the actual season totals are 79/35/+44 (rank 1/2)
+and 61/43/+18 (rank 3/7). The match schema has no xG field.
+
+The new player-source goalkeeper conceded totals were checked against actual
+completed-match totals for 388 adequately covered top-five club-seasons: 366
+exact matches (94.3%). Clean-sheet totals matched in 269/388 (69.3%), so they
+are not used for a league rank. Explicit numeric division fixes fractional
+goalkeeper goals-conceded rates. A separate defender-spend correlation with
+next-season change in the goalkeeper-source rate is near zero (r=0.004047,
+p=0.426997, n=38,531); it supports no useful linear association.
+
+The refreshed test snapshot has **38 unit/regression tests, 16 live API/data
+checks and 15 browser checks passing**. Defensive rate tests assert that
+fractional goals are preserved; live checks verify score-derived ranks across
+all five leagues and reconcile the goalkeeper-source rate to its own totals.

@@ -60,18 +60,46 @@ The primary interface has one visual theme. Club-style clusters described below
 are analytical categories, independent of interface appearance.
 
 Select two clubs in the directory or season table and open **Compare**. Alongside
-their season totals, **Head to head** shows their completed meetings in the
-selected league and season: dates and home/away scores, wins/draws/losses, goals
-scored and conceded, goal difference, goals per match, clean sheets and points.
+their season totals, the comparison reports league goals for (GF), goals against
+(GA), goal difference (GD = GF − GA), and per-match attacking and defensive
+ranks. These score-derived ranks are within the selected league-season; equal
+rates share a rank. **Head to head** is a separate view of their completed
+meetings in the selected league and season: dates and home/away scores,
+wins/draws/losses, goals scored and conceded, goal difference, goals per match,
+clean sheets and points.
 For example, [Inter vs. Milan, Serie A 24/25](http://localhost:8502/?league=IT1&season=24%2F25&teams=46,5#compare)
 contains the two recorded league matches, 1–2 and 1–1. The totals are Inter 2–3
-Milan, with one draw and one Milan win.
+Milan, with one draw and one Milan win. Their season comparison is Inter 79/35/+44
+(attack rank 1, defense rank 2) and Milan 61/43/+18 (ranks 3 and 7).
 
 These are league-only meetings in the selected season, not the clubs' entire
 rivalry or cup results. Match scores come from the optional football-data.co.uk
 enrichment; missing coverage is shown explicitly. Match-level assists are absent
 from that source, so the comparison does not invent them or derive a head-to-head
 Champagne Index from season-level assists.
+The optional player source also provides goalkeeper conceded totals. Those agree
+with the match-source GA in 366/388 adequately covered top-five club-seasons;
+clean-sheet totals agree in only 269/388 and are not used as a league ranking.
+No xG field exists in the loaded match schema.
+
+## Defense preparation materials
+
+The offline study site, English report, Russian team guide, four personal study
+cards, 15-minute slide deck and downloadable archives are in `defense/`. Open
+`defense/site/index.html` in a browser for the interactive study pages; open
+`defense/site/presentation.html` for keyboard-driven slides and speaker notes.
+Browser checkmarks stay in local storage. Rebuild the HTML, PDFs and archives
+with a local Chrome installation using:
+
+```bash
+python3 scripts/build_defense.py
+node scripts/render_defense.mjs
+python3 scripts/package_defense.py
+```
+
+The report records what remains unverified, including the primary source licence
+and independent second-machine validation. Role cards guide preparation; they
+do not prove authorship or substitute for each person's actual contribution.
 
 ## Analysis and club styles
 
@@ -226,13 +254,14 @@ to one author; the groups describe practiced responsibilities, not separate peop
 | Work group | Account | Git email | Responsibilities |
 | --- | --- | --- | --- |
 | Data, SQL and measurements | nedalozanovska | `neda.lozanovska@gmail.com` | Pinned CSV acquisition, header/hash validation, loader, canonical SQL aggregation, repeated infrastructure measurements and source provenance |
-| Analysis, prediction and evaluation | lilllaz | `lilllaz@users.noreply.github.com` | Consecutive-season targets, competition-safe feature lags, chronological RandomForest evaluation, saved Lab model, head-to-head statistics/API and analytical interpretation |
-| Interface and integration | jacoposcaccianoce | `jacoposcaccianoce@users.noreply.github.com` | FastAPI, editorial frontend, Compose integration, API/browser/regression checks, runnable README and handoff documentation |
+| Analysis, prediction and evaluation | lilllaz | `lilllaz@users.noreply.github.com` | Consecutive-season targets, competition-safe feature lags, chronological RandomForest evaluation, saved Lab model, optional defensive-spend analysis, head-to-head API and analytical interpretation |
+| Interface and integration | jacoposcaccianoce | `jacoposcaccianoce@users.noreply.github.com` | FastAPI, editorial frontend, season and head-to-head comparison, attack/defense ranks, Compose integration, API/browser checks and handoff documentation |
 
 Ataika owns the repository and authored the initial schema, loader, pipeline,
 Compose setup and enrichment. Those historical bootstrap/integration commits are
-separate from the three-persona allocation. The emails above are taken from
-existing Git history and are used for both author and committer in the new series.
+separate from the three-persona allocation. The persona identities above are
+verified against the existing Git history; new attribution must use the account
+that actually authored and committed the work.
 
 ### Balanced commit series
 
