@@ -1,7 +1,6 @@
 """Loads the Transfermarkt CSV archive into PostgreSQL.
 
-GET:   the CSVs are already on disk, mounted read-only at /data (see docker-compose.yml
-       and the README for how to download the Kaggle archive into data/).
+GET:   missing primary CSVs are fetched from the pinned public manifest into /data.
 STORE: this script creates the schema (sql/schema.sql) and bulk-loads each CSV with
        Postgres's native COPY, then builds the indices the processing step needs.
 """
@@ -9,6 +8,7 @@ import csv
 import os
 import time
 import json
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -94,7 +94,7 @@ def load_table(conn, table, csv_relpath):
     path = os.path.join(DATA_DIR, csv_relpath)
     if not os.path.exists(path):
         raise SystemExit(
-            f"[loader] missing {path} — did you copy the Kaggle archive into data/? See README."
+            f"[loader] missing {path} — run get_data.py or check the source manifest. See README."
         )
     with conn.cursor() as cur:
         cur.execute(f"TRUNCATE TABLE {table};")
@@ -108,7 +108,37 @@ def load_table(conn, table, csv_relpath):
 
 def season_folder_to_name(folder_season):
     """'2425' -> '24/25', matching champagne_results.season_name."""
+    if not re.fullmatch(r"[0-9]{4}", folder_season) or (int(folder_season[:2]) + 1) % 100 != int(folder_season[2:]):
+        raise ValueError("Match filenames must use consecutive season years, for example 2425.csv.")
     return f"{folder_season[:2]}/{folder_season[2:]}"
+
+
+def parse_match_result(row):
+    """Return a completed, internally consistent score; unplayed fixtures return None."""
+    result = (row.get("FTR") or "").strip()
+    if not result:
+        return None
+    if result not in {"H", "D", "A"}:
+        raise ValueError("Unknown full-time result.")
+    match_date = None
+    for date_format in ("%d/%m/%Y", "%d/%m/%y"):
+        try:
+            match_date = datetime.strptime((row.get("Date") or "").strip(), date_format).date()
+            break
+        except ValueError:
+            continue
+    if match_date is None:
+        raise ValueError("A completed match must have a valid date.")
+    try:
+        home_goals, away_goals = int(row.get("FTHG", "")), int(row.get("FTAG", ""))
+    except (ValueError, TypeError) as error:
+        raise ValueError("Completed scores must be whole numbers.") from error
+    if home_goals < 0 or away_goals < 0:
+        raise ValueError("Goals cannot be negative.")
+    expected = "H" if home_goals > away_goals else "A" if home_goals < away_goals else "D"
+    if result != expected:
+        raise ValueError("Full-time result contradicts the score.")
+    return match_date, home_goals, away_goals, result
 
 
 def load_matches(conn):
@@ -126,6 +156,7 @@ def load_matches(conn):
 
     rows = []
     unmapped = set()
+    invalid = 0
     for league_code in MATCH_LEAGUES:
         league_dir = os.path.join(MATCHES_DIR, league_code)
         if not os.path.isdir(league_dir):
@@ -133,7 +164,11 @@ def load_matches(conn):
         for filename in sorted(os.listdir(league_dir)):
             if not filename.endswith(".csv"):
                 continue
-            season_name = season_folder_to_name(filename.removesuffix(".csv"))
+            try:
+                season_name = season_folder_to_name(filename.removesuffix(".csv"))
+            except ValueError:
+                print(f"[loader] skipping unexpected match filename: {league_code}/{filename}", flush=True)
+                continue
             path = os.path.join(league_dir, filename)
             with open(path, newline="", encoding="utf-8-sig") as f:
                 for row in csv.DictReader(f):
@@ -147,26 +182,26 @@ def load_matches(conn):
                     if away_id is None:
                         unmapped.add((league_code, away))
                         continue
-                    date_str = row.get("Date", "")
-                    match_date = None
-                    for date_format in ("%d/%m/%Y", "%d/%m/%y"):
-                        try:
-                            match_date = datetime.strptime(date_str, date_format).date()
-                            break
-                        except ValueError:
-                            continue
-                    # Future/unplayed fixtures must not count as 0–0 draws.
-                    if row.get("FTR") not in {"H", "D", "A"} or not row.get("FTHG") or not row.get("FTAG"):
+                    try:
+                        parsed = parse_match_result(row)
+                        if home_id == away_id:
+                            raise ValueError("A club cannot play itself.")
+                    except ValueError:
+                        invalid += 1
                         continue
+                    if parsed is None:
+                        continue
+                    match_date, home_goals, away_goals, result = parsed
                     rows.append((
                         league_code, season_name, match_date, home_id, away_id,
-                        row.get("FTHG") or None, row.get("FTAG") or None,
-                        row.get("FTR") or None, row.get("Referee") or None,
+                        home_goals, away_goals, result, row.get("Referee") or None,
                     ))
 
     if unmapped:
         print(f"[loader] WARNING: {len(unmapped)} unmapped team names skipped: "
               f"{sorted(unmapped)[:10]}", flush=True)
+    if invalid:
+        print(f"[loader] WARNING: {invalid} invalid completed-match rows skipped", flush=True)
 
     with conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE match_results;")
