@@ -170,5 +170,52 @@ CREATE TABLE IF NOT EXISTS match_results (
     home_goals INTEGER,
     away_goals INTEGER,
     result CHAR(1),                  -- 'H', 'D', 'A' (full-time result)
-    referee TEXT
+    referee TEXT,
+    -- Everything below is optional/nullable: present in every local source CSV
+    -- (verified across all 5 leagues, 21/22-25/26) but parsed leniently by
+    -- loader/load_data.py's parse_match_extras(), so an older-format match CSV
+    -- missing these columns still loads the core score fields above.
+    home_shots INTEGER,
+    away_shots INTEGER,
+    home_shots_on_target INTEGER,
+    away_shots_on_target INTEGER,
+    home_corners INTEGER,
+    away_corners INTEGER,
+    home_yellow INTEGER,
+    away_yellow INTEGER,
+    home_red INTEGER,
+    away_red INTEGER,
+    ht_home_goals INTEGER,
+    ht_away_goals INTEGER,
+    -- Betting-market columns: Bet365 1x2 odds and Asian handicap (see docs/GLOSSARY.md
+    -- for what the Asian handicap line means) — a "wisdom of crowds" strength signal,
+    -- independent of this project's own goals/spend data, not a measured outcome.
+    odds_home NUMERIC,
+    odds_draw NUMERIC,
+    odds_away NUMERIC,
+    asian_handicap_line NUMERIC,
+    asian_handicap_home_odds NUMERIC,
+    asian_handicap_away_odds NUMERIC
 );
+
+-- Upgrade an existing installation without dropping previously loaded scores.
+-- The loader validates every incoming fixture before its transactional TRUNCATE
+-- and replacement, so failed imports preserve the stored match set.
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS home_shots INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS away_shots INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS home_shots_on_target INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS away_shots_on_target INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS home_corners INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS away_corners INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS home_yellow INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS away_yellow INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS home_red INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS away_red INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS ht_home_goals INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS ht_away_goals INTEGER;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS odds_home NUMERIC;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS odds_draw NUMERIC;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS odds_away NUMERIC;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS asian_handicap_line NUMERIC;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS asian_handicap_home_odds NUMERIC;
+ALTER TABLE match_results ADD COLUMN IF NOT EXISTS asian_handicap_away_odds NUMERIC;

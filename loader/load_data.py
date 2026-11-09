@@ -141,6 +141,41 @@ def parse_match_result(row):
     return match_date, home_goals, away_goals, result
 
 
+# football-data.co.uk column -> match_results column. Shots/cards/half-time
+# score/odds, in this fixed order so parse_match_extras's tuple lines up with
+# EXTRA_COLUMNS below.
+EXTRA_SOURCE_COLUMNS = [
+    ("HS", int), ("AS", int), ("HST", int), ("AST", int),
+    ("HC", int), ("AC", int), ("HY", int), ("AY", int),
+    ("HR", int), ("AR", int), ("HTHG", int), ("HTAG", int),
+    ("B365H", float), ("B365D", float), ("B365A", float),
+    ("AHh", float), ("B365AHH", float), ("B365AHA", float),
+]
+EXTRA_COLUMNS = [
+    "home_shots", "away_shots", "home_shots_on_target", "away_shots_on_target",
+    "home_corners", "away_corners", "home_yellow", "away_yellow",
+    "home_red", "away_red", "ht_home_goals", "ht_away_goals",
+    "odds_home", "odds_draw", "odds_away",
+    "asian_handicap_line", "asian_handicap_home_odds", "asian_handicap_away_odds",
+]
+
+
+def parse_match_extras(row):
+    """Shots, cards, half-time score and betting odds. Present in every local
+    source CSV (checked across all 5 leagues, 21/22-25/26) but genuinely
+    optional data, not a validity requirement for a completed match — unlike
+    parse_match_result, a blank or malformed value here becomes None rather
+    than rejecting the match."""
+    values = []
+    for column, caster in EXTRA_SOURCE_COLUMNS:
+        raw = (row.get(column) or "").strip()
+        try:
+            values.append(caster(raw))
+        except ValueError:
+            values.append(None)
+    return tuple(values)
+
+
 def load_matches(conn):
     """Optional enrichment (requirement: 'where the system got richer than the
     minimum'). If data/matches/ wasn't downloaded, skip quietly — the rest of the
@@ -204,7 +239,7 @@ def load_matches(conn):
                     rows.append((
                         league_code, season_name, match_date, home_id, away_id,
                         home_goals, away_goals, result, row.get("Referee") or None,
-                    ))
+                    ) + parse_match_extras(row))
 
     if unmapped:
         print(f"[loader] WARNING: {len(unmapped)} unmapped team names skipped: "
@@ -217,11 +252,11 @@ def load_matches(conn):
     with conn.cursor() as cur:
         cur.execute("TRUNCATE TABLE match_results;")
         if rows:
+            columns = ["league_code", "season_name", "match_date", "home_team_id", "away_team_id",
+                       "home_goals", "away_goals", "result", "referee"] + EXTRA_COLUMNS
             execute_values(
                 cur,
-                "INSERT INTO match_results "
-                "(league_code, season_name, match_date, home_team_id, away_team_id, "
-                " home_goals, away_goals, result, referee) VALUES %s",
+                f"INSERT INTO match_results ({', '.join(columns)}) VALUES %s",
                 rows,
             )
         cur.execute(

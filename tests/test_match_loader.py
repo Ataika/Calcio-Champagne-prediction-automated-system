@@ -6,12 +6,29 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from loader.load_data import load_matches, parse_match_result, season_folder_to_name
+from loader.load_data import EXTRA_COLUMNS, load_matches, parse_match_extras, parse_match_result, season_folder_to_name
 
 
 class MatchParsingTests(unittest.TestCase):
     def row(self, **changes):
         return dict(Date="02/02/2025", FTHG="0", FTAG="0", FTR="D", **changes)
+
+    def test_missing_extras_default_to_null(self):
+        self.assertEqual(parse_match_extras(self.row()), (None,) * len(EXTRA_COLUMNS))
+
+    def test_shots_cards_and_odds_are_parsed(self):
+        extras = parse_match_extras(self.row(
+            HS="14", AS="9", HST="6", AST="3", HC="5", AC="2", HY="1", AY="3",
+            HR="1", AR="0", HTHG="0", HTAG="0",
+            B365H="2.10", B365D="3.40", B365A="3.20",
+            AHh="-0.5", B365AHH="1.95", B365AHA="1.90",
+        ))
+        self.assertEqual(extras, (14, 9, 6, 3, 5, 2, 1, 3, 1, 0, 0, 0, 2.10, 3.40, 3.20, -0.5, 1.95, 1.90))
+
+    def test_malformed_extra_value_does_not_reject_the_match(self):
+        extras = parse_match_extras(self.row(HS="not-a-number", B365H=""))
+        self.assertIsNone(extras[0])
+        self.assertIsNone(extras[EXTRA_COLUMNS.index("odds_home")])
 
     def test_goalless_draw_and_both_date_formats(self):
         for stamp in ("02/02/2025", "02/02/25"):
