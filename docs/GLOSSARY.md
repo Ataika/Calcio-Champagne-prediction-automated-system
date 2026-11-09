@@ -53,6 +53,24 @@ the ordering comparable when a season is incomplete; tied rates share a rank.
 These are score-based league rankings, not xG, tactical ratings or measures of
 chance quality. The available match source has no xG field.
 
+**Shots for/against, shots on target and corners** — match statistics summed
+per team from the home/away perspective and shown per match. Their denominator
+is the count of matches with both clubs' values present. **Shot accuracy** is
+shots on target divided by shots; **goal conversion from target** is goals
+divided by shots on target. These describe volume and conversion, not shot
+quality.
+
+**Poisson attack/defence rating** — two team parameters fitted separately for
+each league-season from its completed match scores, with a shared home-advantage
+term. Larger attack and defence parameters mean stronger fitted attack and
+defence. The displayed ranks are descriptive in-sample summaries, not held-out
+prediction results.
+
+**SOT-based goal estimate** — shots on target multiplied by the league-season
+average goals-per-shot-on-target rate. This is a rough volume benchmark only;
+it has no shot-location or chance-quality inputs and must not be called measured
+xG. The interface labels it as an experimental proxy.
+
 **Net index** (`net_index`) — `(player goals + assists − Transfermarkt goalkeeper
 goals conceded) / Transfermarkt source matches`. This optional pipeline measure
 combines two event types from the same seasonal source. It is exploratory and is
@@ -127,8 +145,10 @@ never assume "cluster 2 is always the big spenders."
 
 ## Enrichment data
 
-**football-data.co.uk enrichment** — optional CSVs with real match results
-(home/away goals, result, referee) for the top-5 European leagues, 2021-2026.
-Not part of the main Transfermarkt snapshot. Unlocks `league_standings`, the
-Standings dashboard tab, and the home-advantage/injury-burden SQL queries.
-See README's **Data** section for the download/folder layout.
+**football-data.co.uk enrichment** — optional CSVs with real match results and
+statistics (home/away goals, shots, shots on target, corners, cards, half-time
+scores and betting odds) for the top-five European leagues, 2021–2026. Not part
+of the main Transfermarkt snapshot. Unlocks league standings, comparison metrics
+and head-to-head results. The project's source note records the provider's
+academic-use policy and manual-download method; these CSVs are excluded from
+the project archives.

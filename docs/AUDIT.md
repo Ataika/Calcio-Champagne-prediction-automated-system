@@ -146,3 +146,32 @@ The refreshed test snapshot has **38 unit/regression tests, 16 live API/data
 checks and 15 browser checks passing**. Defensive rate tests assert that
 fractional goals are preserved; live checks verify score-derived ranks across
 all five leagues and reconcile the goalkeeper-source rate to its own totals.
+
+## 6 November 2026 — match-stat coverage and model diagnostics
+
+The match import now retains shots, shots on target, corners, cards, half-time
+scores and odds in nullable columns. Existing installations receive additive
+column migrations; the schema no longer drops a loaded match table. The local
+snapshot has 8,907 of 8,908 completed matches with shots-on-target values.
+Side-by-side comparison and direct meetings now include observed shots, shot
+accuracy/conversion and corners with their own coverage denominator. Bookmaker
+odds are retained but omitted from performance comparisons. The official
+Football-Data policy states manual/light use for academic research; the local
+match files were manually downloaded and are not packaged. The separate primary
+Transfermarkt-derived dataset still has no confirmed reuse licence.
+
+New pipeline outputs include descriptive Poisson attack/defense fits for 484
+team-seasons across 25 league-seasons, an explicitly labeled SOT-based estimate
+(not measured xG), a chronological model feature-set comparison, held-out SHAP
+values, and a same-match red-card association. On the same 5,585-row holdout,
+R² changes from 0.1271 to 0.1502 and MAE from 0.4856 to 0.4788 when goalkeeper
+conceded rate, discipline and net spend are added together. The red-card sample
+shows +0.341 conceded goals per team-match (1,619 sent-off vs 16,195 others);
+match state and opponent strength confound it, so it is not causal. Poisson
+ratings are fitted on the same season scores and are in-sample.
+
+Validation on this revision: **43 unit/regression tests, 16 live API/data checks
+and 15 browser checks pass**. Docker rebuilt the loader, pipeline and app; the
+schema migration preserved existing results and the pipeline completed with
+all optional diagnostics. The remaining external submission items are listed
+in [WORK_PACKAGES.md](WORK_PACKAGES.md).

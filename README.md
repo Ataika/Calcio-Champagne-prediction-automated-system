@@ -80,12 +80,22 @@ Champagne Index from season-level assists.
 The optional player source also provides goalkeeper conceded totals. Those agree
 with the match-source GA in 366/388 adequately covered top-five club-seasons;
 clean-sheet totals agree in only 269/388 and are not used as a league ranking.
-No xG field exists in the loaded match schema.
+The manually downloaded match source also supplies shots, shots on target,
+corners and cards for 8,907 of 8,908 completed matches. The comparison shows
+these observed statistics with their match coverage. A separate league-rate
+conversion estimate based on shots on target is labeled as a proxy; it is not
+provider xG. The Poisson attack/defense ratings are descriptive fits on those
+same season scores, not held-out forecasts. No xG field exists in the loaded
+match schema. Football-Data states its free CSVs are intended for personal or
+academic research via manual download or light automation; these local match
+files were manually downloaded for coursework and are excluded from archives.
+See the [source usage policy](https://www.football-data.co.uk/contact.php) and
+[full source notes](docs/SOURCES.md).
 
 ## Defense preparation materials
 
-The offline study site, English report, Russian team guide, four personal study
-cards, 15-minute slide deck and downloadable archives are in `defense/`. Open
+The offline study site, 23-page English submission report, Russian team guide,
+four personal study cards, 15-minute slide deck and downloadable archives are in `defense/`. Open
 `defense/site/index.html` in a browser for the interactive study pages; open
 `defense/site/presentation.html` for keyboard-driven slides and speaker notes.
 Browser checkmarks stay in local storage. Rebuild the HTML, PDFs and archives
@@ -293,14 +303,14 @@ The next six changes are independently reviewable tasks, two per work group:
 [Acceptance checks and the remaining submission steps](docs/WORK_PACKAGES.md)
 describe what each task delivers. The combined update after `6f34edb` has
 **12 commits, four per persona** through `158e8d8`; earlier project history is
-preserved. The later data comparison and exam-preparation package add two
-commits authored and committed by `lilllaz`; these are not attributed to the
-other accounts.
+preserved. Three later commits add verified data comparisons, the defense
+package, and a synchronized README/archive. All three were authored and
+committed by `lilllaz`; they are not attributed to the other accounts.
 
 ```bash
 git shortlog -sne b8d0d0a..158e8d8  # six smaller follow-up commits
 git shortlog -sne 6f34edb..158e8d8  # twelve commits across the two series
-git shortlog -sne 158e8d8..HEAD     # two later commits by the active account
+git shortlog -sne 158e8d8..HEAD     # three later commits by the active account
 ```
 
 GitHub authentication controls permission to push. The author/committer emails

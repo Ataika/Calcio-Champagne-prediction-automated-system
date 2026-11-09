@@ -9,6 +9,7 @@ import html
 import json
 import shutil
 from pathlib import Path
+from build_final_report import main as build_final_report
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRICULUM = ROOT / "defense/curriculum.json"
@@ -206,6 +207,7 @@ def main() -> None:
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     (SITE / "data.js").write_text("window.DEFENSE_DATA = " + json.dumps(d, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
     (MATERIALS / "Project-Report.html").write_text(report(d), encoding="utf-8")
+    build_final_report()
     (MATERIALS / "Team-Defense-Guide.html").write_text(guide(d), encoding="utf-8")
     for r in d["roles"]:
         (MATERIALS / f"Role-{r['id']}.html").write_text(role_doc(d, r), encoding="utf-8")

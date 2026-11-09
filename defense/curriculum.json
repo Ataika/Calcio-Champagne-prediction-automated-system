@@ -1,11 +1,11 @@
 {
   "title": "Calcio Champagne",
   "subtitle": "Defense Academy · LUISS Computational Infrastructures",
-  "prepared": "2026-11-05",
+  "prepared": "2026-11-06",
   "repository": "https://github.com/Ataika/Calcio-Champagne-prediction-automated-system",
   "branch": "codex/calcio-editorial-audit",
-  "summary_en": "Calcio Champagne is a reproducible football data system that asks whether incoming transfer spending accompanies an improvement in next season’s recorded attacking output, and whether attacking output tracks same-season league finish. It combines pinned CSV acquisition, PostgreSQL, a Python processing pipeline, measured infrastructure and a browser application. The principal result is a very small spending/change association and a modest improvement over a zero-change prediction baseline. A separate comparison now reports actual league goals for, goals against, goal difference and score-based per-match attacking/defensive ranks; expected goals are not present in the loaded source. A cross-check finds player-source goalkeeper conceded totals equal the match scoreboard in 366/388 adequately covered top-five seasons; clean-sheet agreement is lower. Defensive spend has no useful linear association with next-season conceded-goal change in the available sample.",
-  "summary_ru": "Проект прослеживает путь от исходных футбольных CSV до базы, аналитики и интерфейса. Главный вопрос: связано ли увеличение расходов на трансферы с улучшением атакующей результативности в следующем сезоне? Отдельно сравниваются атакующий индекс и итоговое место в том же сезоне. Это наблюдательное исследование исторических данных, а не доказательство эффекта покупки игрока. В сравнении также показываются голы за/против, их разница и ранги результативности по реальным голам за матч; xG в источнике отсутствует. Вратарские пропущенные сверены со счетами матчей: точное совпадение в 366/388 адекватно покрытых сезонов топ-5 лиг; по сухим матчам согласие ниже. Расходы на защитников не связаны с последующим изменением пропущенных голов в полезной линейной степени.",
+  "summary_en": "Calcio Champagne is a reproducible football data system that asks whether incoming transfer spending accompanies an improvement in next season’s recorded attacking output, and whether attacking output tracks same-season league finish. It combines pinned CSV acquisition, PostgreSQL, a Python processing pipeline, measured infrastructure and a browser application. The primary model improves modestly over a zero-change baseline. A separate comparison reports score-derived GF/GA/GD and league ranks, observed shots, shots on target and corners, plus descriptive Poisson attack/defense ranks. The source has no provider xG; an SOT-based conversion proxy is explicitly experimental. A goalkeeper cross-check and red-card association are presented with their coverage and limits. The primary Transfermarkt-derived dataset’s licence remains unconfirmed.",
+  "summary_ru": "Calcio Champagne — воспроизводимая система футбольных данных: она проверяет связь расходов на трансферы с изменением атакующего индекса в следующем сезоне и с итоговым местом. Сравнение добавляет голы за/против, разницу, ранги, реальные удары, удары в створ и угловые, а также описательные Poisson-оценки атаки и обороны. Поля провайдера xG нет; отдельно показана только экспериментальная оценка по ударам в створ, не настоящая xG. Сверка вратарских данных и связь красных карточек с пропущенными сопровождаются покрытием и ограничениями. Лицензия основного набора Transfermarkt остаётся неподтверждённой.",
   "formula": "Champagne Index = (recorded goals + recorded assists) / source matches",
   "metrics": [
     {
@@ -72,6 +72,31 @@
       "label": "Defensive spend → next GA change",
       "value": "r = 0.004047",
       "note": "p = 0.426997; n = 38,531 eligible consecutive pairs. No useful linear association in this snapshot."
+    },
+    {
+      "label": "Shot and corner coverage",
+      "value": "8,907 / 8,908 matches",
+      "note": "Shots, shots on target and corners; team comparison uses the exact available-match denominator."
+    },
+    {
+      "label": "Poisson attack/defence fits",
+      "value": "484 team-seasons · 25 league-seasons",
+      "note": "Descriptive ratings fitted on the same season scores; not an out-of-sample forecast."
+    },
+    {
+      "label": "Attack-only → augmented model R²",
+      "value": "0.1271 → 0.1502",
+      "note": "Same chronological split and 5,585 held-out observations; augmented features add conceded-goal rate, discipline and net spend."
+    },
+    {
+      "label": "Red card association",
+      "value": "+0.341 conceded goals / team-match",
+      "note": "1,619 sent-off vs 16,195 other team-matches; Welch p < 0.0001. Descriptive and confounded, not causal."
+    },
+    {
+      "label": "SHAP · leading feature",
+      "value": "Champagne Index · 0.205 mean |SHAP|",
+      "note": "Held-out augmented model. Explains this fitted model, not football causally."
     }
   ],
   "stages": [
@@ -111,14 +136,14 @@
       "name": "PROCESS",
       "title": "Valid targets and evaluation",
       "owner": "lill",
-      "body": "pipeline/compute_predictions.py calculates the index, only forms targets for consecutive adequately covered seasons, constructs five inputs and uses a chronological test split. A separate all-data RandomForest is saved for the retrospective Lab.",
+      "body": "pipeline/compute_predictions.py calculates validated next-season targets and compares a five-feature model with added defense/discipline/net-spend inputs on the same chronological split. It also writes SHAP explanations, score-derived standings, Poisson attack/defense ratings, a labeled SOT-based proxy and a red-card association check.",
       "ru": "Возвращение клуба после пропущенного сезона не считается следующим годом. Изменение рыночной стоимости строится по уникальному клубу-сезону до добавления соревнований. Поздние сезоны не попадают в обучение оценочной модели.",
       "files": [
         "pipeline/compute_predictions.py",
         "docs/LAB.md",
         "tests/test_regressions.py"
       ],
-      "failure": "Partial 25/26 observations and season gaps can create false targets. Evaluation and deployed exploration use different fitted models."
+      "failure": "Partial seasons are not fitted as full league tables. SHAP describes one model, the SOT conversion is not provider xG, and same-season ratings/red-card comparisons are descriptive rather than causal."
     },
     {
       "id": "show",
@@ -126,7 +151,7 @@
       "name": "SHOW",
       "title": "Bounded API and journal",
       "owner": "jacopo",
-      "body": "FastAPI exposes bounded league/season queries, filtered CSV export, club comparisons and saved-model inference. Static HTML/CSS/JavaScript renders charts. Scenario inputs are validated, and browser generations discard stale responses.",
+      "body": "FastAPI exposes bounded league/season queries, filtered export, two/three-club comparisons with score-derived ranks and covered shot statistics, and saved-model inference. Static HTML/CSS/JavaScript renders the results. Model-based and proxy metrics are labeled separately from observed scores.",
       "ru": "Интерфейс не загружает миллионы сырых строк и не переобучает модель при движении слайдера. API читает подготовленные таблицы с параметризованным SQL и отдельными соединениями из пула.",
       "files": [
         "app/api.py",
@@ -511,7 +536,7 @@
       "id": "q31",
       "role": "all",
       "question": "Do we have xG or can we estimate it?",
-      "answer": "No xG field is present in the loaded match schema or the checked source tables. Do not estimate xG from final scores. The comparison reports actual goals and per-match ranks only.",
+      "answer": "The source has no provider xG field. The comparison instead shows observed shots and shots on target. A separate estimate multiplies shots on target by the league-season average goals-per-shot-on-target rate; it is an experimental volume proxy with no shot-location or chance-quality input, not xG.",
       "ru": "Есть ли в данных xG или можем ли мы его оценить?"
     },
     {
@@ -533,14 +558,42 @@
       "role": "all",
       "question": "What does the defensive-spend analysis show?",
       "ru": "Что показывает анализ расходов на защитников?",
-      "answer": "The Pearson correlation between defender transfer fees and next-season change in the goalkeeper-source conceded-goal rate is r=0.004047, p=0.426997, n=38,531. The sample does not support a useful linear association. It is descriptive, not causal."
+      "answer": "The Pearson correlation between defender transfer fees and next-season change in the goalkeeper-source conceded-goal rate is r=0.004047, p=0.426997, n=38,531. The sample does not support a useful linear association. It is descriptive, not causal. A separate match-level check finds teams with a red card concede 0.341 more goals on average in the same match, but match context confounds that association."
     },
     {
       "id": "q35",
       "role": "all",
       "question": "Why keep the player-source defensive values separate from scoreboard goals?",
       "ru": "Почему defensive-показатели по игрокам отделены от итогов матчей?",
-      "answer": "The sources use different records and denominators. The goalkeeper conceded total agrees with scorelines in 94.3% of the adequately covered sample, while clean-sheet totals agree in 69.3%. The UI therefore uses completed match scores for GF, GA, goal difference and ranks; the player-source totals are a data-quality cross-check."
+      "answer": "The sources use different records and denominators. Goalkeeper conceded totals agree with scorelines in 94.3% of adequately covered seasons, while clean sheets agree in 69.3%. The UI therefore uses match scores for GF, GA, GD and ranks; player-source totals remain a quality cross-check. Shots and corners are also observed match statistics, not chance-quality measures."
+    },
+    {
+      "id": "q36",
+      "role": "all",
+      "question": "Is the shot-based estimate the same as xG?",
+      "ru": "Оценка по ударам — это xG?",
+      "answer": "No. It multiplies a team’s shots on target by the league-season average goals per shot on target. It has no shot-location, distance, body-part, pressure or goalkeeper-position input. It is a rough volume benchmark and must be called an SOT-based proxy, not provider xG."
+    },
+    {
+      "id": "q37",
+      "role": "all",
+      "question": "What does the Poisson attack/defense rank tell us?",
+      "ru": "Что показывают Poisson-ранги атаки и обороны?",
+      "answer": "The model fits attack, defense and a shared home-advantage term to the selected league-season scores. Larger fitted attack and defense parameters mean stronger estimated attack and defense. Its ranks are descriptive and in-sample; the separate chronological RandomForest evaluation is the project’s held-out prediction check."
+    },
+    {
+      "id": "q38",
+      "role": "all",
+      "question": "Did the added defensive features improve the model?",
+      "ru": "Улучшили ли защитные признаки модель?",
+      "answer": "On the same chronological split, R² moves from 0.1271 with the five-feature baseline to 0.1502 after adding goalkeeper conceded rate, discipline and net spend; MAE moves from 0.4856 to 0.4788 on 5,585 held-out rows. The gain is modest, and it does not isolate a causal effect of defense."
+    },
+    {
+      "id": "q39",
+      "role": "all",
+      "question": "Do red cards cause more goals to be conceded?",
+      "ru": "Красные карточки приводят к большему числу пропущенных?",
+      "answer": "The local sample shows a same-match difference of +0.341 conceded goals per team-match (1,619 sent-off vs 16,195 others; Welch p < 0.0001). This is observational: stronger opponents, match state and timing can affect both red cards and goals. It is not a causal estimate."
     }
   ],
   "slides": [
@@ -619,9 +672,11 @@
         "Attack ranks 1 / 3; defense ranks 2 / 7, by per-match goals",
         "Separate head-to-head: scores 1–2 and 1–1; aggregate goals 2–3",
         "Open Lab → change one input → reset",
-        "Project page: sample sizes, methods and measurements."
+        "Project page: sample sizes, methods and measurements.",
+        "Shots / shots on target / corners: coverage 8,907 of 8,908 matches",
+        "Poisson model ranks are in-sample; the SOT conversion proxy is not xG"
       ],
-      "notes": "На живом демо уйди с презентации в заранее открытую локальную вкладку. Раздели сезонные показатели GF/GA/GD и ранги от отдельных двух очных матчей. Ранг считается по голам за матч, а не по xG; xG в источнике нет. Не меняй все настройки. Если матчевые CSV отсутствуют, покажи честное сообщение покрытия и продолжи к Lab."
+      "notes": "On the comparison, distinguish score-based GF/GA/GD ranks from the direct-match block. Point out shot-data coverage and call the SOT estimate a rough proxy, not xG. Poisson ratings use the same season scores and are in-sample. If match files are missing, show honest coverage."
     },
     {
       "title": "What the data supports",
@@ -632,9 +687,11 @@
         "Transfer spend → next attacking change: r = −0.0036; n = 38,531",
         "Defender spend → next conceded-goal change: r = +0.0040; p = 0.427",
         "Same-season index ↔ position: r = −0.793; n = 388",
-        "Different targets; these are associations, not interventions."
+        "Different targets; these are associations, not interventions.",
+        "Same temporal split: R² 0.127 → 0.150 with conceded rate, discipline and net spend",
+        "Red-card difference +0.341 conceded goals; observational, not causal"
       ],
-      "notes": "Поясни отрицательный знак у места: меньшее число места лучше. Отдельный умеренный ML-результат не отменяет почти нулевую линейную связь расходов с динамикой. По защитным тратам r≈0.004 и p≈0.427, поэтому статистического основания заявлять улучшение защиты нет."
+      "notes": "The augmented model adds features as a group; do not claim the improvement comes from one defensive variable. The red-card test is a same-match association, confounded by match state and opponent."
     },
     {
       "title": "Measure the whole system",
@@ -839,6 +896,11 @@
     {
       "title": "Defensive data coverage",
       "ref": "Goalkeeper-source totals compared with completed-match scorelines",
+      "path": "docs/SOURCES.md"
+    },
+    {
+      "title": "Match-data usage conditions",
+      "ref": "Football-Data fair-use policy for personal or academic research; project files were manually downloaded and are not redistributed",
       "path": "docs/SOURCES.md"
     }
   ]

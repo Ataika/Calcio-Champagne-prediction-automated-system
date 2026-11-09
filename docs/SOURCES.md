@@ -65,6 +65,14 @@ this local snapshot. Names are resolved with `sql/team_name_map.sql`. Both two-
 and four-digit date years are accepted. Unplayed fixtures are excluded. This
 source remains optional and is not scraped by the loader.
 
+Football-Data's [current fair-data usage policy](https://www.football-data.co.uk/contact.php)
+states that its free CSV/Excel data is intended for personal betting or academic
+research, downloaded manually or with light automation (at most twice weekly).
+These optional files were manually downloaded for this academic project and are
+not redistributed. This stated use policy is not a general open-data licence and
+does not change the separate unresolved licence status of the primary
+Transfermarkt-derived dataset above.
+
 Completed rows require valid dates, nonnegative whole-number goals and a result
 consistent with the score. Unexpected season filenames are skipped with a
 warning. Duplicate fixtures are imported once; contradictory scores stop the
@@ -76,6 +84,15 @@ The loaded snapshot currently has all 25 league-season CSVs (five leagues ×
 five seasons), totaling 8,908 completed matches. These scorelines support actual
 GF, GA, GD and per-match scoring/conceding ranks in season comparisons. The
 source schema has no expected-goals (xG) field, so xG is not reported. The
+match CSVs also contain shots, shots on target, corners, cards and half-time
+scores for 8,907 of 8,908 completed matches. The comparison presents these as
+observed match statistics. A separate SOT-based estimate applies the league's
+overall goals-per-shot-on-target rate; it is explicitly an experimental proxy,
+not provider xG or a shot-location model. A two-parameter Poisson fit reports
+descriptive attack/defence ratings for complete league seasons; those ratings
+are fitted to the same season scores and are not out-of-sample forecasts.
+Bookmaker odds are stored as source fields but are not treated as team
+performance measures in the comparison.
 primary Transfermarkt player table includes `goals_conceded` and `clean_sheets`
 at player level. Pipeline totals are retained as a distinct cross-check, not
 substituted for complete club match totals. On 388 adequately covered top-five
