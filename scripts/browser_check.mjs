@@ -217,7 +217,7 @@ try {
       2,
     );
     const comparisonLabels = await evaluate("Array.from(document.querySelectorAll('.comparison-table tbody tr td:first-child'), cell => cell.textContent.trim())");
-    for (const label of ["League goals scored · GF", "League goals conceded · GA", "League goal difference · GF − GA", "Attacking rank · goals per match", "Defensive rank · fewest conceded per match"])
+    for (const label of ["League goals scored · GF", "League goals conceded · GA", "League goal difference · GF − GA", "Attacking rank · goals per match", "Defensive rank · fewest conceded per match", "Shots per match · for / against", "Shots on target per match · for / against", "Poisson model rank · attack / defense", "SOT-based goal estimate · not measured xG"])
       assert.ok(comparisonLabels.includes(label), `Season comparison includes ${label}`);
     assert.ok(await evaluate("document.querySelector('.trend-svg')!==null"));
     assert.ok(await evaluate("document.querySelector('#head-to-head')!==null"));
@@ -225,6 +225,11 @@ try {
   const derbyResponse = await fetch(`${base}/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=24%2F25`);
   assert.ok(derbyResponse.ok, "Derby API must be available");
   const derby = await derbyResponse.json();
+  const interProfile = await (await fetch(`${base}/api/clubs/46?competition=IT1&season=24%2F25`)).json();
+  assert.equal(interProfile.current.shots_matches, 38);
+  assert.equal(interProfile.current.sot_matches, 38);
+  assert.ok(interProfile.current.attack_model_rank != null);
+  assert.ok(interProfile.current.proxy_xg_per_match != null);
   await check("Head-to-head reflects recorded scores or missing source coverage", async () => {
     await evaluate("location.href='/?league=IT1&season=24%2F25&teams=46,5#compare'");
     await wait("document.querySelector('#head-to-head') && document.querySelector('.comparison-heading')?.textContent.includes('Inter') && document.querySelector('#season-select')?.value==='24/25'", "derby comparison");
@@ -233,6 +238,10 @@ try {
       assert.deepEqual(
         await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_for]'), cell => Number(cell.textContent))"),
         derby.teams.map(team => team.goals_for),
+      );
+      assert.deepEqual(
+        await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=shots_on_target_per_match]'), cell => Number(cell.textContent))"),
+        derby.teams.map(team => team.shots_on_target_per_match),
       );
       assert.deepEqual(
         await evaluate("Array.from(document.querySelectorAll('[data-h2h-stat=goals_against]'), cell => Number(cell.textContent))"),
@@ -312,6 +321,10 @@ try {
           "document.querySelector('#findings').innerText.toLowerCase().includes('defender spending') && document.querySelector('#findings').innerText.toLowerCase().includes('no useful linear signal')",
         ),
       );
+      assert.ok(evidence.model_showdown.attack_defense.r2_score > evidence.model_showdown.attack_only.r2_score);
+      assert.equal(evidence.shap[0].feature, "champagne_index");
+      assert.equal(evidence.match_stats_coverage.sot_matches, 8907);
+      assert.ok(await evaluate("document.querySelector('#findings').innerText.includes('descriptive association')"));
       const measurementText = await evaluate("document.querySelector('#measurements').innerText.toLowerCase()");
       assert.ok(measurementText.includes(evidence.benchmark?.system_runs?.length
         ? "complete startup" : evidence.benchmark ? "difference an index makes" : "no benchmark artifact"));

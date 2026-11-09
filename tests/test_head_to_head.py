@@ -31,6 +31,21 @@ class HeadToHeadTests(unittest.TestCase):
         self.assertEqual((stats["matches"], stats["draws"], stats["points"]), (1, 1, 1))
         self.assertEqual((stats["goals_per_match"], stats["clean_sheets"]), (0, 1))
 
+    def test_match_statistics_keep_home_away_perspective_and_coverage(self):
+        stats = summarize_head_to_head(1, "First", [
+            dict(home_team_id=1, away_team_id=2, home_goals=2, away_goals=0,
+                 home_shots=12, away_shots=8, home_shots_on_target=5,
+                 away_shots_on_target=2, home_corners=6, away_corners=3),
+            dict(home_team_id=2, away_team_id=1, home_goals=1, away_goals=0,
+                 home_shots=10, away_shots=7, home_shots_on_target=3,
+                 away_shots_on_target=1, home_corners=4, away_corners=2),
+            dict(home_team_id=1, away_team_id=2, home_goals=0, away_goals=0),
+        ])
+        self.assertEqual(stats["shots_on_target_matches"], 2)
+        self.assertEqual(stats["shots_on_target_per_match"], 3.0)
+        self.assertEqual(stats["shots_on_target_against_per_match"], 2.5)
+        self.assertEqual(stats["corners_per_match"], 4.0)
+
     def test_endpoint_preserves_requested_club_order_and_bound_scope(self):
         clubs = [dict(team_id=1, team_name="First"), dict(team_id=2, team_name="Second")]
         matches = [dict(match_date="2025-01-01", home_team_id=1, away_team_id=2,
@@ -41,7 +56,21 @@ class HeadToHeadTests(unittest.TestCase):
         self.assertEqual(data["teams"][0]["goals_for"], 1)
         self.assertEqual(data["matches"][0]["home_team_name"], "First")
         self.assertTrue(data["enrichment_available"])
-        self.assertEqual(read.call_args_list[1].args[1], ("I1", "24/25", 2, 1, 1, 2))
+        self.assertEqual(read.call_args_list[1].args[1], ("I1", "24/25", [2, 1], [2, 1]))
+
+    def test_three_club_comparison_summarizes_each_clubs_direct_meetings(self):
+        clubs = [dict(team_id=i, team_name=f"Club {i}") for i in (1, 2, 3)]
+        matches = [
+            dict(match_date="2024-09-01", home_team_id=1, away_team_id=2, home_goals=2, away_goals=0),
+            dict(match_date="2024-10-01", home_team_id=3, away_team_id=1, home_goals=1, away_goals=1),
+            dict(match_date="2024-11-01", home_team_id=2, away_team_id=3, home_goals=0, away_goals=1),
+        ]
+        with patch("app.api.read", side_effect=[clubs, matches]) as read:
+            data = head_to_head(1, 2, "IT1", "24/25", team_c=3)
+        self.assertEqual([team["team_id"] for team in data["teams"]], [1, 2, 3])
+        self.assertEqual([team["matches"] for team in data["teams"]], [2, 2, 2])
+        self.assertEqual([team["goals_for"] for team in data["teams"]], [3, 0, 2])
+        self.assertEqual(read.call_args_list[1].args[1], ("I1", "24/25", [1, 2, 3], [1, 2, 3]))
 
     def test_empty_meetings_distinguish_missing_enrichment(self):
         clubs = [dict(team_id=1, team_name="First"), dict(team_id=2, team_name="Second")]

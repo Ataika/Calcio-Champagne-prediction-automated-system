@@ -108,6 +108,9 @@ def main():
         assert inter["goals_for"] is None and inter["attack_rank"] is None
     assert inter["total_goals_conceded"] == 35
     assert inter["goals_conceded_per_match"] == 0.92
+    assert inter["shots_matches"] == 38 and inter["sot_matches"] == 38
+    assert 1 <= inter["attack_model_rank"] <= 3 and 1 <= inter["defense_model_rank"] <= 5
+    assert inter["shots_for_per_match"] > 0 and inter["proxy_xg_per_match"] is not None
     config = fetch(f"/api/lab/config?team_id={chosen['team_id']}&competition=IT1&season=24%2F25")
     assert not config["missing"]
     assert config["features"]["champagne_index"] == chosen["champagne_index"]
@@ -121,6 +124,8 @@ def main():
     checks.extend(["club history keeps competition identity", "real five-feature prefill + inference", "invalid inputs rejected"])
     meetings = fetch("/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=24%2F25")
     check_head_to_head(meetings, 46, 5)
+    assert meetings["teams"][0]["shots_on_target_matches"] == 2
+    assert meetings["teams"][0]["shots_on_target_per_match"] is not None
     reverse = fetch("/api/head-to-head?team_a=5&team_b=46&competition=IT1&season=24%2F25")
     assert reverse["teams"] == meetings["teams"][::-1]
     empty = fetch("/api/head-to-head?team_a=46&team_b=5&competition=IT1&season=20%2F21")
@@ -128,6 +133,10 @@ def main():
     fetch("/api/head-to-head?team_a=46&team_b=46&competition=IT1&season=24%2F25", expected=422)
     fetch("/api/head-to-head?team_a=46&team_b=46%27%20OR%201=1&competition=IT1&season=24%2F25", expected=422)
     fetch("/api/head-to-head?team_a=46&team_b=11&competition=IT1&season=24%2F25", expected=404)
+    third_id = next(row["team_id"] for row in fetch("/api/season?competition=IT1&season=24%2F25")["rows"]
+                    if row["team_id"] not in (46, 5))
+    trio = fetch(f"/api/head-to-head?team_a=46&team_b=5&team_c={third_id}&competition=IT1&season=24%2F25")
+    assert [team["team_id"] for team in trio["teams"]] == [46, 5, third_id]
     checks.extend(["head-to-head totals and reversed clubs",
                    "head-to-head contracts across two seasons", "invalid head-to-head clubs rejected"])
     exported = list(csv.DictReader(io.StringIO(fetch("/api/export?competition=IT1&season=24%2F25"))))
@@ -139,6 +148,11 @@ def main():
     if project["position"]:
         assert project["position"]["n_observations"] > 0
     assert project["ml"]["evaluation"]["test_rows"] > 0
+    assert project["model_showdown"]["attack_defense"]["r2_score"] > project["model_showdown"]["attack_only"]["r2_score"]
+    assert project["shap"][0]["feature"] == "champagne_index"
+    assert project["red_card_effect"]["n_with_red"] > 0
+    assert project["match_stats_coverage"]["sot_matches"] == 8907
+    assert project["power_ratings"]["team_seasons"] == 484
     checks.extend(["filtered CSV export", "corrected evaluation + verified course source"])
     assert "The data" in fetch("/api/docs")
     assert fetch("/api/openapi.json")["paths"]["/api/lab/predict"]["post"]

@@ -97,7 +97,9 @@ def latest(table):
         raise ValueError("Unknown model table")
     if not exists(table):
         return None
-    rows = read(f"SELECT * FROM {table} ORDER BY computed_at DESC LIMIT 1")
+    order = ("ORDER BY CASE WHEN model_variant='attack_only' THEN 0 ELSE 1 END, computed_at DESC"
+             if table == "champagne_model_ml" else "ORDER BY computed_at DESC")
+    rows = read(f"SELECT * FROM {table} {order} LIMIT 1")
     if not rows:
         return None
     row = rows[0]
@@ -233,6 +235,12 @@ def analysis(competition: str = "IT1", season: str = "24/25"):
 def summarize_head_to_head(team_id, team_name, matches):
     """Read each score from this club's perspective, including away matches."""
     wins = draws = losses = goals_for = goals_against = clean_sheets = 0
+    match_profile = {
+        "shots": ("home_shots", "away_shots"),
+        "shots_on_target": ("home_shots_on_target", "away_shots_on_target"),
+        "corners": ("home_corners", "away_corners"),
+    }
+    profile_totals = {name: {"for": 0, "against": 0, "matches": 0} for name in match_profile}
     for match in matches:
         home = match["home_team_id"] == team_id
         scored = match["home_goals"] if home else match["away_goals"]
@@ -243,35 +251,56 @@ def summarize_head_to_head(team_id, team_name, matches):
         draws += scored == conceded
         losses += scored < conceded
         clean_sheets += conceded == 0
+        for name, (home_key, away_key) in match_profile.items():
+            own = match.get(home_key) if home else match.get(away_key)
+            opponent = match.get(away_key) if home else match.get(home_key)
+            if own is not None and opponent is not None:
+                profile_totals[name]["for"] += own
+                profile_totals[name]["against"] += opponent
+                profile_totals[name]["matches"] += 1
+    profile = {}
+    for name, values in profile_totals.items():
+        denominator = values["matches"]
+        profile[f"{name}_matches"] = denominator
+        profile[f"{name}_per_match"] = values["for"] / denominator if denominator else None
+        profile[f"{name}_against_per_match"] = values["against"] / denominator if denominator else None
     return {"team_id": team_id, "team_name": team_name, "matches": len(matches),
             "wins": wins, "draws": draws, "losses": losses,
             "goals_for": goals_for, "goals_against": goals_against,
             "goal_difference": goals_for - goals_against,
             "goals_per_match": goals_for / len(matches) if matches else None,
-            "clean_sheets": clean_sheets, "points": 3 * wins + draws}
+            "clean_sheets": clean_sheets, "points": 3 * wins + draws, **profile}
 
 
 @app.get("/api/head-to-head")
 def head_to_head(team_a: int = Query(..., gt=0, le=2_147_483_647),
                  team_b: int = Query(..., gt=0, le=2_147_483_647),
-                 competition: str = "IT1", season: str = "24/25"):
+                 competition: str = "IT1", season: str = "24/25",
+                 team_c: int | None = None):
     scope(competition, season)
-    if team_a == team_b:
-        raise HTTPException(422, "Choose two different clubs.")
+    ids = [team_a, team_b] + ([team_c] if team_c is not None else [])
+    if team_c is not None and not 0 < team_c <= 2_147_483_647:
+        raise HTTPException(422, "Invalid third club.")
+    if len(set(ids)) != len(ids):
+        raise HTTPException(422, "Choose different clubs.")
     clubs = read("""SELECT team_id, team_name FROM champagne_results
                     WHERE competition_id=%s AND season_name=%s AND team_id=ANY(%s)""",
-                 (competition, season, [team_a, team_b]))
+                 (competition, season, ids))
     names = {row["team_id"]: row["team_name"] for row in clubs}
-    if team_a not in names or team_b not in names:
-        raise HTTPException(404, "Both clubs must belong to the selected league and season.")
+    if any(team not in names for team in ids):
+        raise HTTPException(404, "All selected clubs must belong to the selected league and season.")
     league_code = LEAGUES[competition]["code"]
+    # Every completed meeting among the selected clubs (2 or 3) — any team vs.
+    # any other team in `ids`, never a team against itself.
     matches = read("""
-        SELECT match_date, home_team_id, away_team_id, home_goals, away_goals
+        SELECT match_date, home_team_id, away_team_id, home_goals, away_goals,
+               home_shots, away_shots, home_shots_on_target, away_shots_on_target,
+               home_corners, away_corners
         FROM match_results WHERE league_code=%s AND season_name=%s
-            AND ((home_team_id=%s AND away_team_id=%s) OR (home_team_id=%s AND away_team_id=%s))
+            AND home_team_id=ANY(%s) AND away_team_id=ANY(%s) AND home_team_id<>away_team_id
             AND result IN ('H', 'D', 'A') AND home_goals IS NOT NULL AND away_goals IS NOT NULL
         ORDER BY match_date NULLS LAST, home_team_id, away_team_id
-    """, (league_code, season, team_a, team_b, team_b, team_a))
+    """, (league_code, season, ids, ids))
     available = bool(matches)
     if not matches:
         available = read("""SELECT EXISTS (
@@ -281,9 +310,51 @@ def head_to_head(team_a: int = Query(..., gt=0, le=2_147_483_647),
     for match in matches:
         match["home_team_name"] = names[match["home_team_id"]]
         match["away_team_name"] = names[match["away_team_id"]]
+    # Each team's summary covers its matches against any of the other
+    # selected clubs, not just one specific opponent — a round-robin summary
+    # when three clubs are selected, the original pairwise one when two are.
+    teams = []
+    for team in ids:
+        own_matches = [m for m in matches if m["home_team_id"] == team or m["away_team_id"] == team]
+        teams.append(summarize_head_to_head(team, names[team], own_matches))
     return {"competition": competition, "season": season, "source": "football-data.co.uk",
-            "enrichment_available": available, "matches": matches,
-            "teams": [summarize_head_to_head(team, names[team], matches) for team in (team_a, team_b)]}
+            "enrichment_available": available, "matches": matches, "teams": teams}
+
+
+def team_match_profile(team_id, competition, season):
+    """Observed match statistics with separate denominators for each source field."""
+    league_code = LEAGUES[competition]["code"]
+    rows = read("""
+        WITH team_matches AS (
+            SELECT
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_goals ELSE m.away_goals END AS goals_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_shots ELSE m.away_shots END AS shots_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_shots ELSE m.home_shots END AS shots_against,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_shots_on_target ELSE m.away_shots_on_target END AS sot_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_shots_on_target ELSE m.home_shots_on_target END AS sot_against,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_corners ELSE m.away_corners END AS corners_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_corners ELSE m.home_corners END AS corners_against
+            FROM match_results m CROSS JOIN (SELECT %s::integer AS team_id) t
+            WHERE m.league_code=%s AND m.season_name=%s
+              AND (m.home_team_id=t.team_id OR m.away_team_id=t.team_id)
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL) AS shots_matches,
+            SUM(shots_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL), 0) AS shots_for_per_match,
+            SUM(shots_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL), 0) AS shots_against_per_match,
+            COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL) AS sot_matches,
+            SUM(sot_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL), 0) AS sot_for_per_match,
+            SUM(sot_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL), 0) AS sot_against_per_match,
+            100.0 * SUM(sot_for) FILTER (WHERE sot_for IS NOT NULL AND shots_for IS NOT NULL)
+                / NULLIF(SUM(shots_for) FILTER (WHERE sot_for IS NOT NULL AND shots_for IS NOT NULL), 0) AS shot_accuracy_pct,
+            100.0 * SUM(goals_for) FILTER (WHERE sot_for IS NOT NULL)
+                / NULLIF(SUM(sot_for) FILTER (WHERE sot_for IS NOT NULL), 0) AS goal_conversion_pct,
+            COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL) AS corner_matches,
+            SUM(corners_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL), 0) AS corners_for_per_match,
+            SUM(corners_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL), 0) AS corners_against_per_match
+        FROM team_matches
+    """, (team_id, league_code, season))
+    return rows[0] if rows else {}
 
 
 @app.get("/api/clubs/{team_id}")
@@ -313,6 +384,27 @@ def club(team_id: int, competition: str = "IT1", season: str = "24/25"):
     if not rows:
         raise HTTPException(404, "This club has no data in the selected league.")
     current = next((r for r in rows if r["season_name"] == season), None)
+    if current:
+        current.update(team_match_profile(team_id, competition, season))
+        if exists("team_power_ratings"):
+            rating_rows = read("""
+                SELECT * FROM (
+                    SELECT team_id, attack_rating, defense_rating,
+                           RANK() OVER (PARTITION BY competition_id, season_name ORDER BY attack_rating DESC) AS attack_model_rank,
+                           RANK() OVER (PARTITION BY competition_id, season_name ORDER BY defense_rating DESC) AS defense_model_rank
+                    FROM team_power_ratings WHERE competition_id=%s AND season_name=%s
+                ) ratings WHERE team_id=%s
+            """, (competition, season, team_id))
+            if rating_rows:
+                current.update(rating_rows[0])
+        if exists("proxy_xg_by_team_season"):
+            proxy_rows = read("""
+                SELECT proxy_xg_per_match, proxy_xga_per_match, finishing_luck, defensive_luck
+                FROM proxy_xg_by_team_season
+                WHERE team_id=%s AND competition_id=%s AND season_name=%s
+            """, (team_id, competition, season))
+            if proxy_rows:
+                current.update(proxy_rows[0])
     clusters = read("SELECT * FROM club_style_clusters WHERE team_id=%s AND season_name=%s AND competition_name=%s",
                     (team_id, season, LEAGUES[competition]["name"])) if exists("club_style_clusters") else []
     home_away_rows = read("""
@@ -436,8 +528,33 @@ def project():
     coverage = read("SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT team_id) AS clubs, MIN(season_key) AS from_year, MAX(season_key) AS to_year FROM champagne_results")[0]
     benchmark = json.loads(RESULTS_PATH.read_text()) if RESULTS_PATH.exists() else None
     model = latest("champagne_model_ml")
+    model_variants = read("""SELECT model_variant, r2_score, n_observations, evaluation
+                            FROM champagne_model_ml ORDER BY computed_at DESC""") if exists("champagne_model_ml") else []
+    for variant in model_variants:
+        if isinstance(variant.get("evaluation"), str):
+            variant["evaluation"] = json.loads(variant["evaluation"])
+    by_variant = {row["model_variant"]: row for row in model_variants}
+    showdown = {"attack_only": by_variant.get("attack_only"),
+                "attack_defense": by_variant.get("attack_defense")}
+    shap_rows = read("""SELECT feature, mean_abs_shap FROM champagne_model_shap
+                       WHERE model_variant='attack_defense' ORDER BY mean_abs_shap DESC""") if exists("champagne_model_shap") else []
+    red_card_rows = read("SELECT * FROM discipline_match_effect WHERE league_code='ALL'") if exists("discipline_match_effect") else []
+    rating_rows = read("""SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT (league_code, season_name)) AS league_seasons
+                         FROM team_power_ratings""") if exists("team_power_ratings") else []
+    proxy_rows = read("""SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT (league_code, season_name)) AS league_seasons
+                        FROM proxy_xg_by_team_season""") if exists("proxy_xg_by_team_season") else []
+    match_stats_rows = read("""SELECT COUNT(*) AS matches,
+        COUNT(*) FILTER (WHERE home_shots IS NOT NULL AND away_shots IS NOT NULL) AS shots_matches,
+        COUNT(*) FILTER (WHERE home_shots_on_target IS NOT NULL AND away_shots_on_target IS NOT NULL) AS sot_matches,
+        COUNT(*) FILTER (WHERE home_corners IS NOT NULL AND away_corners IS NOT NULL) AS corner_matches
+        FROM match_results""") if exists("match_results") else []
     return clean({"tables": counts, "coverage": coverage, "benchmark": benchmark,
                   "linear": latest("champagne_model"), "ml": model,
+                  "model_showdown": showdown, "shap": shap_rows,
+                  "red_card_effect": red_card_rows[0] if red_card_rows else None,
+                  "power_ratings": rating_rows[0] if rating_rows else None,
+                  "proxy_xg": proxy_rows[0] if proxy_rows else None,
+                  "match_stats_coverage": match_stats_rows[0] if match_stats_rows else None,
                   "position": latest("champagne_vs_position_model"),
                   "defense_spend": latest("defense_spend_model"),
                   "transfer": latest("transfer_fee_model"),

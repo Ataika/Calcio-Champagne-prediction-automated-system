@@ -63,11 +63,11 @@ try {
   });
   await check("Question search and examiner answer reveal work",async()=>{
     await go("questions/all");await evaluate("document.querySelector('#question-search').value='xG';document.querySelector('#question-search').dispatchEvent(new Event('input',{bubbles:true}))");
-    assert.equal(await evaluate("document.querySelectorAll('#question-list details').length"),2);
+    assert.equal(await evaluate("document.querySelectorAll('#question-list details').length"),3);
     await evaluate("[...document.querySelectorAll('#question-list details')].find(d=>d.textContent.toLowerCase().includes('do we have xg'))?.querySelector('summary').click()");
-    assert.ok((await evaluate("[...document.querySelectorAll('#question-list details')].find(d=>d.textContent.toLowerCase().includes('do we have xg'))?.querySelector('.answer').textContent")).includes("No xG field"));
+    assert.ok((await evaluate("[...document.querySelectorAll('#question-list details')].find(d=>d.textContent.toLowerCase().includes('do we have xg'))?.querySelector('.answer').textContent")).includes("no provider xG field"));
     await evaluate("document.querySelector('#question-search').value='';document.querySelector('#question-search').dispatchEvent(new Event('input',{bubbles:true}))");
-    assert.equal(await evaluate("document.querySelectorAll('#question-list details').length"),35);
+    assert.equal(await evaluate("document.querySelectorAll('#question-list details').length"),39);
   });
   await check("15-minute rehearsal timer starts and pauses",async()=>{
     await go("rehearsal");assert.equal(await evaluate("document.querySelectorAll('.timeline-card').length"),10);
