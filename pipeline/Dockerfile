@@ -10,5 +10,9 @@ COPY pipeline/compute_predictions.py .
 COPY pipeline/transfer_fee_model.py .
 COPY pipeline/club_style_clustering.py .
 COPY pipeline/feature_correlations.py .
+COPY pipeline/power_ratings.py .
+COPY pipeline/proxy_xg.py .
+COPY pipeline/discipline_effect.py .
+COPY pipeline/shap_analysis.py .
 
 CMD ["python", "compute_predictions.py"]

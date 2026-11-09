@@ -27,9 +27,13 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
 try:
-    from . import feature_correlations
+    from . import discipline_effect, feature_correlations, power_ratings, proxy_xg, shap_analysis
 except ImportError:
+    import discipline_effect
     import feature_correlations
+    import power_ratings
+    import proxy_xg
+    import shap_analysis
 
 MODELS_DIR = "/models"
 
@@ -309,7 +313,10 @@ def fit_ml_model(features, reserve_youth_ids, feature_columns=ML_FEATURE_COLUMNS
         "target": "next consecutive season index minus current index",
         "seed": 42, "n_estimators": 200, "max_depth": 6,
     }
-    return r2, len(train), importances, deploy_model, feature_ranges, evaluation
+    # model/X_test appended at the end (not inserted) so existing positional
+    # unpacks of the first six elements, and tests indexing by position
+    # (e.g. evaluation == result[5]), keep working unchanged.
+    return r2, len(train), importances, deploy_model, feature_ranges, evaluation, model, X_test
 
 
 def save_lab_model(model, feature_ranges, evaluation):
@@ -643,14 +650,14 @@ def write_ml_model(conn, ml_result, augmented_result=None):
         cur.execute("ALTER TABLE champagne_model_ml ADD COLUMN IF NOT EXISTS evaluation TEXT;")
         cur.execute("ALTER TABLE champagne_model_ml ADD COLUMN IF NOT EXISTS model_variant TEXT DEFAULT 'attack_only';")
         if ml_result:
-            r2, n, importances, _model, _ranges, evaluation = ml_result
+            r2, n, importances, _model, _ranges, evaluation, *_eval = ml_result
             cur.execute(
                 "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation, model_variant) "
                 "VALUES (%s, %s, %s, %s, 'attack_only')",
                 (r2, n, json.dumps(importances), json.dumps(evaluation)),
             )
         if augmented_result:
-            r2, n, importances, _model, _ranges, evaluation = augmented_result
+            r2, n, importances, _model, _ranges, evaluation, *_eval = augmented_result
             cur.execute(
                 "INSERT INTO champagne_model_ml (r2_score, n_observations, feature_importances, evaluation, model_variant) "
                 "VALUES (%s, %s, %s, %s, 'attack_defense')",
@@ -705,7 +712,7 @@ def main():
     augmented_result = fit_ml_model(ml_features, reserve_youth_ids, feature_columns=ML_FEATURE_COLUMNS_AUGMENTED)
     write_ml_model(conn, ml_result, augmented_result)
     if ml_result:
-        r2, n_ml, importances, deploy_model, feature_ranges, evaluation = ml_result
+        r2, n_ml, importances, deploy_model, feature_ranges, evaluation, *_eval = ml_result
         top_feature = max(importances, key=importances.get)
         print(
             f"[pipeline] RandomForest richer-feature model: test R^2={r2:.3f} n={n_ml} "
@@ -717,13 +724,20 @@ def main():
     else:
         print("[pipeline] not enough complete rows to fit the RandomForest model, skipping", flush=True)
     if augmented_result:
-        aug_r2, aug_n, _imp, _m, _r, _e = augmented_result
+        aug_r2, aug_n, _imp, _m, _r, _e, aug_eval_model, aug_X_test = augmented_result
         base_r2 = ml_result[0] if ml_result else float("nan")
         print(
             f"[pipeline] attack-only vs. attack+defense showdown: "
             f"attack-only R^2={base_r2:.3f} attack+defense R^2={aug_r2:.3f} n={aug_n}",
             flush=True,
         )
+        # SHAP on the exact held-out test split already used for the R^2 above —
+        # same evaluation, not a rosier in-sample explanation (Issue: SHAP pass).
+        shap_importances = shap_analysis.compute(aug_eval_model, aug_X_test, ML_FEATURE_COLUMNS_AUGMENTED)
+        shap_analysis.write(conn, shap_importances, "attack_defense")
+        top_shap = max(shap_importances, key=shap_importances.get)
+        print(f"[pipeline] SHAP on attack+defense model: top feature={top_shap} "
+              f"(mean|SHAP|={shap_importances[top_shap]:.4f})", flush=True)
 
     ml_elapsed = time.perf_counter() - ml_started
     standings_started = time.perf_counter()
@@ -751,6 +765,23 @@ def main():
     dropped = [p for p in pairs if p["collinear"]]
     print(f"[pipeline] feature correlation matrix: {len(pairs)} pairs, "
           f"{len(dropped)} flagged collinear (|r|>{feature_correlations.COLLINEARITY_THRESHOLD})", flush=True)
+
+    # Attack/defense power ratings (Issue #1), proxy-xG/finishing luck (#3/#4)
+    # and the red-card-vs-conceded-goals effect (#11) — all built from real
+    # match_results, all optional/skip-quietly if the enrichment isn't loaded.
+    ratings_df = power_ratings.compute(conn)
+    power_ratings.write(conn, ratings_df)
+    print(f"[pipeline] power ratings: {ratings_df['team_id'].nunique() if not ratings_df.empty else 0} "
+          f"team-seasons across {ratings_df[['league_code', 'season_name']].drop_duplicates().shape[0] if not ratings_df.empty else 0} league-seasons",
+          flush=True)
+
+    proxy_xg_df = proxy_xg.compute(conn)
+    proxy_xg.write(conn, proxy_xg_df)
+    print(f"[pipeline] proxy-xG: {len(proxy_xg_df):,} team-seasons", flush=True)
+
+    discipline_rows = discipline_effect.compute(conn)
+    discipline_effect.write(conn, discipline_rows)
+    print(f"[pipeline] red-card effect: {len(discipline_rows)} league groups", flush=True)
 
     conn.close()
     output = Path(os.getenv("RESULTS_DIR", "/results"))
