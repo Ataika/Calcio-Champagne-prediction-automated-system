@@ -1,7 +1,8 @@
 # Calcio Champagne — defense package
 
-Prepared 5 November 2026 for the LUISS CIDS project defense. Start with these
-items:
+Prepared 9 November 2026 for the LUISS CIDS project defense. The checkpoint is
+12 November (five-minute end-to-end demo) and the final defense is 20/26
+November (15 minutes plus five minutes of questions). Start with these items:
 
 1. `site/index.html` is the offline, interactive study site. It has role guides,
    a pipeline walkthrough, measured evidence, a rehearsal timer and examiner
@@ -10,7 +11,12 @@ items:
 3. `site/downloads/Team-Defense-Guide.pdf` is the Russian team study guide with
    English rehearsal scripts and Q&A.
 4. `site/downloads/Presentation.pdf` is a ten-slide, 15-minute deck.
-5. `site/downloads/Role-*.pdf` are individual quick-reference cards.
+5. `site/downloads/Role-*.pdf` are the four personal exam guides. Each one has
+   what to know, what to show, the speaker's own slots on the 15-minute clock,
+   how to close the exam, a map of the exact project files behind that role,
+   the examiner questions for it, and the shared exam-day section: dates,
+   machine preparation, how to answer, and direct answers to the four
+   uncomfortable questions (licence, contributors, second laptop, xG).
 
 ## Run the presentation site
 

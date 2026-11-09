@@ -70,6 +70,47 @@ th { background:#eceee5; font: bold 8pt Arial; }
 </style>"""
 
 
+def path_table(rows: list[dict]) -> str:
+    cells = "".join(
+        f'<tr><td><code>{esc(row["path"])}</code></td><td>{esc(row["why"])}</td></tr>' for row in rows)
+    return ('<table><thead><tr><th>Файл в проекте</th><th>Что в нём смотреть</th></tr></thead>'
+            f'<tbody>{cells}</tbody></table>')
+
+
+def role_schedule(d: dict, role_id: str) -> str:
+    """The speaker's own slides with absolute clock positions, so each person
+    knows when to start talking and when to stop."""
+    rows, clock = [], 0
+    for i, s in enumerate(d["slides"], 1):
+        start, clock = clock, clock + s["seconds"]
+        if s["owner"] != role_id:
+            continue
+        rows.append(f'<tr><td>{i}. {esc(s["title"])}</td><td>{esc(s["kicker"])}</td>'
+                    f'<td>{start // 60:02d}:{start % 60:02d}–{clock // 60:02d}:{clock % 60:02d}</td>'
+                    f'<td>{s["seconds"]} с</td></tr>')
+    return ('<table><thead><tr><th>Слайд</th><th>Блок</th><th>Время</th><th>Длительность</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
+def exam_day(d: dict) -> str:
+    e = d["exam_day"]
+    dates = "".join(
+        f'<tr><td><b>{esc(x["date"])}</b><br><span class="small">{esc(x["source"])}</span></td>'
+        f'<td>{esc(x["label"])} · {esc(x["format"])}</td><td>{esc(x["what"])}</td></tr>' for x in e["dates"])
+    honest = "".join(
+        f'<tr><td>{esc(x["topic"])}</td><td lang="en">{esc(x["ask"])}</td>'
+        f'<td lang="en">{esc(x["say"])}<br><span class="small"><code>{esc(x["where"])}</code></span></td></tr>'
+        for x in e["honest"])
+    return ('<section class="break"><h2>Экзаменационный день</h2>'
+            '<table><thead><tr><th>Дата</th><th>Формат</th><th>Что требуется</th></tr></thead>'
+            f'<tbody>{dates}</tbody></table>'
+            '<h3>Подготовка машины и материалов</h3>' + number_list(e["before"]) +
+            '<h3>Как отвечать на вопросы</h3>' + bullet_list(e["qa"]) +
+            '<h3>Неудобные вопросы: отвечай прямо и первым</h3>'
+            '<table><thead><tr><th>Тема</th><th>Вопрос</th><th>Ответ и где подтверждение</th></tr></thead>'
+            f'<tbody>{honest}</tbody></table></section>')
+
+
 def document(title: str, body: str, language: str = "en", slides: bool = False) -> str:
     cls = "slides-doc" if slides else ""
     return (f'<!doctype html><html lang="{language}"><head><meta charset="utf-8">'
@@ -140,7 +181,7 @@ def guide(d: dict) -> str:
     body.append('<h2>План подготовки команды</h2><ol><li>Каждый изучает свою карточку, проходит упражнения и показывает, где подтверждение в репозитории.</li><li>Вместе проследите CSV → PostgreSQL → pipeline → API → экран.</li><li>Проведите 15-минутную репетицию с таймером; не превышайте время своей части.</li><li>Каждый отвечает минимум на два вопроса вне своего направления.</li><li>Проверьте приложение на другом ноутбуке и подготовьте резервное видео.</li></ol>')
     body.append('<div class="callout warning"><b>Распределение в пособии — план изучения и выступления.</b> Оно само по себе не доказывает, кто писал конкретный код. На защите описывайте фактическую работу, которую вы можете показать.</div>')
     for r in d["roles"]:
-        body.append(f'<section class="role"><div class="kicker">{esc(r["account"])} · {esc(r["minutes"])} recommended speaking time</div><h2>{esc(r["name"])}</h2><p><b>Область:</b> {esc(r["scope"])}</p><h3>Что знать</h3>{bullet_list(r["must_know"])}<h3>Что показать</h3>{number_list(r["show"])}<h3>Английская реплика для репетиции</h3><div class="callout"><i>{esc(r["script_en"])}</i></div><p><b>Передача слова:</b> “{esc(r["handoff_en"])}”</p><h3>Практика</h3>{number_list(r["exercises"])}<h3>Избегай</h3>{bullet_list(r["avoid"])}</section>')
+        body.append(f'<section class="role"><div class="kicker">{esc(r["account"])} · {esc(r["minutes"])} recommended speaking time</div><h2>{esc(r["name"])}</h2><p><b>Область:</b> {esc(r["scope"])}</p><h3>Что знать</h3>{bullet_list(r["must_know"])}<h3>Что показать</h3>{number_list(r["show"])}<h3>Английская реплика для репетиции</h3><div class="callout"><i>{esc(r["script_en"])}</i></div><p><b>Передача слова:</b> “{esc(r["handoff_en"])}”</p><h3>Практика</h3>{number_list(r["exercises"])}<h3>Как закрывать экзамен</h3>{number_list(r["closing"])}<h3>Где смотреть в проекте</h3>{path_table(r["lookup"])}<h3>Избегай</h3>{bullet_list(r["avoid"])}</section>')
     body.append('<section class="break"><h2>Вопросы экзаменатора</h2><p>Сначала ответь вслух коротко, затем объясни основание и ограничение.</p>')
     for q in d["questions"]:
         who = "Все" if q["role"] == "all" else next((r["account"] for r in d["roles"] if r["id"] == q["role"]), "Команда")
@@ -157,6 +198,7 @@ def guide(d: dict) -> str:
         body.append(f'<tr><td>{esc(item["time"])}</td><td>{esc(item["action"])}</td><td>{esc(item["expected"])}<br><span class="small">{esc(item["fallback"])}</span></td></tr>')
     body.append('</tbody></table>')
     body.append('<h3>До сдачи</h3>' + bullet_list([c["label"] for c in d["checklist"]]))
+    body.append(exam_day(d))
     body.append('<h2>Проверенные факты и ограничения</h2><table><thead><tr><th>Measure</th><th>Value</th><th>Explanation</th></tr></thead><tbody>')
     for m in d["metrics"]:
         body.append(f'<tr><td>{esc(m["label"])}</td><td>{esc(m["value"])}</td><td>{esc(m["note"])}</td></tr>')
@@ -171,12 +213,16 @@ def role_doc(d: dict, r: dict) -> str:
     body.append('<h2>Что показать</h2>' + number_list(r["show"]))
     body.append('<h2>Короткая речь на английском</h2><div class="callout"><i>' + esc(r["script_en"]) + '</i></div>')
     body.append('<p><b>Переход:</b> “' + esc(r["handoff_en"]) + '”</p>')
+    body.append('<h2>Твой тайминг на защите</h2>' + role_schedule(d, r["id"]))
+    body.append('<h2>Как закрывать экзамен</h2>' + number_list(r["closing"]))
+    body.append('<h2>Где смотреть в проекте</h2>' + path_table(r["lookup"]))
     body.append('<h2>Практические задания</h2>' + number_list(r["exercises"]))
     body.append('<h2>Вопросы по направлению</h2>')
     qs = [q for q in d["questions"] if q["role"] in (r["id"], "all")]
     for q in qs:
         body.append(f'<div class="question"><p><b lang="en">{esc(q["question"])}</b></p><p class="small">{esc(q["ru"])}</p><p class="answer">{esc(q["answer"])}</p></div>')
     body.append('<h2>Какие фразы не использовать</h2>' + bullet_list(r["avoid"]))
+    body.append(exam_day(d))
     body.append('<div class="callout warning">Роль — учебная ответственность. Не заявляй личное авторство или самостоятельную проверку, если этого не было. Покажи ровно те изменения и команды, которые выполнял(а) лично.</div>')
     return document(f"Role guide — {r['account']}", "".join(body), "ru")
 
@@ -206,6 +252,8 @@ def main() -> None:
     MATERIALS.mkdir(parents=True, exist_ok=True)
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     (SITE / "data.js").write_text("window.DEFENSE_DATA = " + json.dumps(d, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
+    # report() also refreshes defense/site/assets from artifacts/; build_final_report()
+    # then replaces its Project-Report.html with the full twenty-one-page report.
     (MATERIALS / "Project-Report.html").write_text(report(d), encoding="utf-8")
     build_final_report()
     (MATERIALS / "Team-Defense-Guide.html").write_text(guide(d), encoding="utf-8")
@@ -215,10 +263,14 @@ def main() -> None:
     total = sum(s["seconds"] for s in d["slides"])
     if total != 900:
         raise SystemExit(f"Expected a 15-minute presentation, got {total}s")
+    stale = [x["path"] for r in d["roles"] for x in r["lookup"] if not (ROOT / x["path"]).exists()]
+    if stale:
+        raise SystemExit(f"Role file maps point at paths that no longer exist: {stale}")
     speaking = {r["id"]: sum(s["seconds"] for s in d["slides"] if s["owner"] == r["id"]) for r in d["roles"]}
     if set(speaking.values()) != {225}:
         raise SystemExit(f"Speaking time must stay balanced at 225 seconds each: {speaking}")
-    print(f"Built offline site data, report, guide, four role cards and {len(d['slides'])} slides ({total // 60} minutes).")
+    print(f"Built offline site data, report, guide, four role cards and {len(d['slides'])} slides "
+          f"({total // 60} minutes); {sum(len(r['lookup']) for r in d['roles'])} file-map rows verified.")
 
 
 if __name__ == "__main__":

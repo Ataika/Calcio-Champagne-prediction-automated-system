@@ -1,7 +1,7 @@
 {
   "title": "Calcio Champagne",
   "subtitle": "Defense Academy · LUISS Computational Infrastructures",
-  "prepared": "2026-11-06",
+  "prepared": "2026-11-09",
   "repository": "https://github.com/Ataika/Calcio-Champagne-prediction-automated-system",
   "branch": "codex/calcio-editorial-audit",
   "summary_en": "Calcio Champagne is a reproducible football data system that asks whether incoming transfer spending accompanies an improvement in next season’s recorded attacking output, and whether attacking output tracks same-season league finish. It combines pinned CSV acquisition, PostgreSQL, a Python processing pipeline, measured infrastructure and a browser application. The primary model improves modestly over a zero-change baseline. A separate comparison reports score-derived GF/GA/GD and league ranks, observed shots, shots on target and corners, plus descriptive Poisson attack/defense ranks. The source has no provider xG; an SOT-based conversion proxy is explicitly experimental. A goalkeeper cross-check and red-card association are presented with their coverage and limits. The primary Transfermarkt-derived dataset’s licence remains unconfirmed.",
@@ -209,6 +209,53 @@
         "Все источники имеют открытую лицензию.",
         "Индекс ускоряет любой запрос в 145 раз.",
         "Ноль в данных всегда означает подтверждённое отсутствие события."
+      ],
+      "lookup": [
+        {
+          "path": "loader/sources.json",
+          "why": "Закреплённая ревизия, URL, SHA-256 и порядок столбцов каждого из 11 источников. Открывай этот файл, а не рассказывай про него словами."
+        },
+        {
+          "path": "loader/get_data.py",
+          "why": "Проверка заголовков и контрольной суммы, временный файл и атомарная установка — ответ на вопрос про обрыв загрузки."
+        },
+        {
+          "path": "loader/load_data.py",
+          "why": "COPY в PostgreSQL, валидация матчей, `parse_match_extras`, очистка устаревшего enrichment при пропавшем источнике."
+        },
+        {
+          "path": "sql/schema.sql",
+          "why": "Схема, индексы и аддитивные ALTER для новых столбцов матчей: существующая база обновляется без потери загруженных счетов."
+        },
+        {
+          "path": "sql/champagne_queries.sql",
+          "why": "Ключ агрегации клуб × сезон × соревнование и MAX(team_name) как выбор подписи, а не ключа."
+        },
+        {
+          "path": "sql/team_name_map.sql",
+          "why": "Сопоставление названий клубов с каноническими идентификаторами перед join матчей."
+        },
+        {
+          "path": "tests/test_acquisition.py",
+          "why": "Что именно проверено в загрузке: плохой хэш, плохой заголовок, обрыв передачи — на фиктивных HTTP-ответах."
+        },
+        {
+          "path": "tests/test_match_loader.py",
+          "why": "Дубли и противоречивые счета, двух- и четырёхзначные годы, валидные 0–0."
+        },
+        {
+          "path": "docs/SOURCES.md",
+          "why": "Провенанс, расхождение legacy metadata table и граница лицензии — твой ответ на лицензионный вопрос."
+        }
+      ],
+      "closing": [
+        "Ты открываешь защиту: слайды 1–3, 00:00–03:45. Темп всей команды задаёшь ты — не разгоняйся, первые 20 секунд говори медленно.",
+        "Начни с вопроса, понятного вне курса, и сразу раздели два вопроса: динамика следующего сезона и описательная связь в том же сезоне.",
+        "Открой `loader/sources.json` на экране и покажи один реальный элемент манифеста: ревизию, SHA-256 и порядок столбцов. Это сильнее любого слайда.",
+        "Про лицензию говори первой, до вопроса экзаменатора: ревизия закреплена, лицензия не подтверждена, сырые данные не распространяем.",
+        "Про legacy metadata table тоже скажи сама: одна таблица отличается от свежей нормализованной загрузки, в центральный индекс и модель она не входит.",
+        "Обоснование PostgreSQL держи в одном предложении: фиксированные столбцы и связи по игрокам, клубам, сезонам и соревнованиям.",
+        "Передай слово по скрипту `handoff_en` — не импровизируй переход, это съедает секунды."
       ]
     },
     {
@@ -246,6 +293,57 @@
         "Модель доказывает, что увеличение бюджета улучшит игру.",
         "R² — доля правильных прогнозов.",
         "Оценка отдельной holdout-модели является результатом тестирования all-data модели Lab."
+      ],
+      "lookup": [
+        {
+          "path": "pipeline/compute_predictions.py",
+          "why": "Target, пять признаков, лаг рыночной стоимости, хронологический holdout и baseline нулевого изменения — всё в одном файле."
+        },
+        {
+          "path": "docs/LAB.md",
+          "why": "Протокол модели и отличие Lab-модели (все данные) от оценочной модели (ранние сезоны → поздние)."
+        },
+        {
+          "path": "docs/findings.md",
+          "why": "Актуальные r, p, n, R² и MAE. Называй числа отсюда, а не по памяти."
+        },
+        {
+          "path": "docs/GLOSSARY.md",
+          "why": "Определения Champagne Index, Discipline Index, рангов и граница xG."
+        },
+        {
+          "path": "pipeline/feature_correlations.py",
+          "why": "Матрица корреляций признаков и флаг коллинеарности |r| > порога."
+        },
+        {
+          "path": "pipeline/shap_analysis.py",
+          "why": "mean |SHAP| на том же held-out сплите, что и R² — ответ на «почему не in-sample»."
+        },
+        {
+          "path": "pipeline/power_ratings.py",
+          "why": "Poisson attack/defense с общим home advantage; в коде прямо написано, что оценка in-sample."
+        },
+        {
+          "path": "pipeline/proxy_xg.py",
+          "why": "Прокси по ударам в створ и finishing/defensive luck — почему это не xG."
+        },
+        {
+          "path": "pipeline/discipline_effect.py",
+          "why": "Связь красных карточек с пропущенными: +0.341 гола за матч, 1 619 против 16 195 наблюдений."
+        },
+        {
+          "path": "tests/test_regressions.py",
+          "why": "Зафиксированные известные дефекты модели и расчётов, чтобы они не вернулись."
+        }
+      ],
+      "closing": [
+        "Твои слайды 4, 5 и 7 (03:45–07:30 и 10:15–11:15). Между ними выступает Джакоппо с демо — следи за таймером, чтобы не потерять свой слайд findings.",
+        "Сначала определи наблюдение, потом показывай модель: клуб × сезон × соревнование, затем target как разницу с следующим последовательным сезоном.",
+        "Главное число произноси как сравнение, а не как достижение: MAE 0.4856 против baseline 0.5114 — улучшение около 5%.",
+        "Сразу объясни, что R² = 0.127 не доля правильных прогнозов. Это самый вероятный вопрос по твоей части.",
+        "Если спросят про Lab: отдельная модель на всех данных для исследования, её собственная подгонка не является независимым тестом.",
+        "Про любую связь говори «accompanies», «is associated with». Слово «causes» на твоей части стоит дороже всего.",
+        "Про xG отвечай коротко: поля провайдера нет, есть реальные удары и экспериментальный прокси по ударам в створ."
       ]
     },
     {
@@ -283,6 +381,53 @@
         "Очные ассисты или xG доступны в матчевом источнике.",
         "Модель обучается заново при каждом движении слайдера.",
         "Успешный HTTP 200 одной страницы доказывает корректность всех данных."
+      ],
+      "lookup": [
+        {
+          "path": "app/api.py",
+          "why": "Контракты эндпоинтов, 422 / 404 / 503, bound-параметры, read-only транзакции и guard на существование таблиц."
+        },
+        {
+          "path": "app/static/app.js",
+          "why": "Состояния страницы: отсутствие покрытия, отсутствие встреч и реальный 0–0 — три разных состояния."
+        },
+        {
+          "path": "app/static/api-docs.html",
+          "why": "Готовая документация API: открывается на `/api/docs` во время демо."
+        },
+        {
+          "path": "scripts/check_live.py",
+          "why": "Проверка живых контрактов и подготовленных выходов — запускается после подъёма стека."
+        },
+        {
+          "path": "scripts/browser_check.mjs",
+          "why": "Браузерные проверки реальных сценариев и мобильной раскладки, скриншоты в `artifacts/`."
+        },
+        {
+          "path": "scripts/site_check.mjs",
+          "why": "Проверка офлайн-сайта пособия, результат в `defense/site-check.json`."
+        },
+        {
+          "path": "tests/test_head_to_head.py",
+          "why": "Перспектива выбранного клуба: голы за и против меняются местами при развороте сравнения."
+        },
+        {
+          "path": "tests/test_health.py",
+          "why": "Почему 503 означает «данные или модель не готовы», а не ошибку запроса."
+        },
+        {
+          "path": "docs/FRONTEND_HANDOFF.md",
+          "why": "Контракт данных для внешнего фронтенда — доказательство, что presentation отделён от обработки."
+        }
+      ],
+      "closing": [
+        "Твои слайды 6 (демо, 165 секунд) и 10 (закрытие, 60 секунд). Демо — самая длинная часть выступления и самая уязвимая.",
+        "Пять шагов демо держи по порядку из таблицы ниже и вслух называй, что ожидаешь увидеть, до того как это появится на экране.",
+        "Если что-то не поднялось — не чини Docker при экзаменаторе. Одна фраза «переходим на записанные доказательства» и скриншоты из `defense/site/assets/`.",
+        "Покажи состояние «нет данных» специально: это доказывает, что интерфейс не выдумывает 0–0.",
+        "В Lab меняй ровно один ввод, потом Reset. Один фактор за раз — это же правило, что в измерениях.",
+        "На вопрос «зачем API, а не графики из таблиц» отвечай про размер: миллионы строк не уходят в браузер, SQL и валидация остаются на сервере.",
+        "Закрывая, назови границы проекта и незакрытые пункты сам — это последнее, что услышит экзаменатор, и честность здесь работает в плюс."
       ]
     },
     {
@@ -318,6 +463,57 @@
         "31 секунда включает скачивание 353 MiB и сборку образов.",
         "docker stats гарантирует истинный максимальный расход памяти.",
         "Одинаковое число коммитов подтверждает одинаковый личный вклад."
+      ],
+      "lookup": [
+        {
+          "path": "docker-compose.yml",
+          "why": "Порядок запуска: healthcheck базы → успешный loader → успешный pipeline → приложение. Профили для measure и legacy UI."
+        },
+        {
+          "path": "docs/MEASUREMENTS.md",
+          "why": "Три прогона, железо (M3 Pro / 18 GiB), метод выборки памяти и все оговорки. Главный документ твоей части."
+        },
+        {
+          "path": "docs/ARCHITECTURE.md",
+          "why": "Контейнеры как блоки, стрелки как файлы, строки, SQL и HTTP — структура для слайда архитектуры."
+        },
+        {
+          "path": "docs/COURSE_REQUIREMENTS.md",
+          "why": "Таблица требований курса со страницами брифа и статусом каждого пункта."
+        },
+        {
+          "path": "measure/benchmark.py",
+          "why": "Эксперимент с индексом: 300 одинаковых выборочных запросов, 145.4× — и почему это не ускорение всего приложения."
+        },
+        {
+          "path": "scripts/measure_system.py",
+          "why": "Полный прогон с нуля: старт 31.10 с, loader 12.53 с, pipeline 9.7 с (средние трёх прогонов)."
+        },
+        {
+          "path": "scripts/report_measurements.py",
+          "why": "Сборка измерений в отчёт — показывает, что числа не вписаны руками."
+        },
+        {
+          "path": "docs/AUDIT.md",
+          "why": "Найденные и исправленные дефекты: ответ на вопрос «как вы убедились, что это работает»."
+        },
+        {
+          "path": "docs/WORK_PACKAGES.md",
+          "why": "Пакеты работ, приёмочные условия и честный список незакрытых внешних пунктов."
+        },
+        {
+          "path": "scripts/build_defense.py",
+          "why": "Сборка этого пособия: слайды, роли, PDF и проверка, что выступление ровно 900 секунд."
+        }
+      ],
+      "closing": [
+        "Твои слайды 8 и 9 (11:15–15:00) — ты закрываешь содержательную часть, и твоя часть прямо соответствует обязательному пункту «производительность в числах».",
+        "Каждое число произноси с условиями: 31.10 с — среднее трёх прогонов с готовыми источниками и собранными образами, без скачивания и без сборки.",
+        "145.4× называй как результат одного эксперимента на 300 выборочных запросах, а не как ускорение всего приложения. Этот вопрос задают почти всегда.",
+        "Память описывай методом: максимальная наблюдённая выборка docker stats с интервалом около двух секунд, не гарантированный пик.",
+        "Рост 25 / 50 / 100% объясняй нелинейностью: 4× строк дали 4.40× загрузки и 3.35× агрегации из-за фиксированных затрат, планов и кэшей.",
+        "Меняй один фактор за раз — скажи это вслух, это прямое требование протокола измерений из брифа.",
+        "В конце назови, что осталось: лицензия, независимый запуск на другом ноутбуке, резервное видео и фактический состав участников. Не заявляй их выполненными."
       ]
     }
   ],
@@ -903,5 +1099,65 @@
       "ref": "Football-Data fair-use policy for personal or academic research; project files were manually downloaded and are not redistributed",
       "path": "docs/SOURCES.md"
     }
-  ]
+  ],
+  "exam_day": {
+    "dates": [
+      {
+        "date": "12 ноября 2026",
+        "label": "Чекпоинт",
+        "format": "5 минут",
+        "what": "Сквозное демо, один видимый результат и первое измеренное время полного прогона. Красивый интерфейс не требуется.",
+        "source": "CIDS Lecture 15, стр. 37–39"
+      },
+      {
+        "date": "20 / 26 ноября 2026",
+        "label": "Финальная защита",
+        "format": "15 минут + 5 минут вопросов",
+        "what": "Говорят все реальные участники. Рекомендованный хронометраж: вопрос и данные 3 мин, архитектура 2, живое демо 3, измерения 3, проблемы 2, вклад 2.",
+        "source": "CIDS Lecture 15, стр. 37–39"
+      }
+    ],
+    "before": [
+      "За 30 минут: `docker compose up -d --build`, затем открыть `/api/health` и дождаться `ready=true` вместе с завершёнными loader и pipeline.",
+      "Открыть заранее четыре вкладки: Overview (Serie A 24/25), сравнение Inter / Milan, Lab и страницу Project с числами.",
+      "Открыть офлайн-копию пособия `defense/site/index.html` и `defense/site/downloads/Presentation.pdf` — они работают без сети и без базы.",
+      "Проверить, что скриншоты `defense/site/assets/*-desktop.png` на месте: это резерв, если Docker не поднимется.",
+      "Отключить уведомления, подключить питание, проверить зеркалирование экрана и масштаб шрифта в браузере.",
+      "Решить заранее, кто ведёт демо и кто держит таймер; таймер есть в `defense/site/presentation.html` (клавиша N — заметки, F — полный экран)."
+    ],
+    "qa": [
+      "Отвечай тремя шагами: короткий ответ одним предложением → основание (файл или число) → ограничение.",
+      "Каждое число называй с выборкой и единицей: «r = −0.79 на 388 клуб-сезонах в одном сезоне», а не «корреляция высокая».",
+      "Не знаешь ответа — скажи, где он лежит, и не придумывай: «это в docs/MEASUREMENTS.md, метод измерения памяти описан там».",
+      "Вопрос не по твоей части — передай одной фразой владельцу направления, не пересказывай чужую зону приблизительно.",
+      "Никогда не превращай связь в причину: говори accompanies, is associated with, а не causes или improves.",
+      "Если спросили про слабое место — отвечай прямо и первым. Признанное ограничение выглядит сильнее, чем защищаемая неточность."
+    ],
+    "honest": [
+      {
+        "topic": "Лицензия первичного источника",
+        "ask": "Is your data openly licensed?",
+        "say": "We pinned the source revision and verified headers and checksums, but we did not establish an explicit reuse licence. We document it as unresolved and we do not redistribute the raw data. Public downloadability is not a licence.",
+        "where": "docs/SOURCES.md, docs/COURSE_REQUIREMENTS.md"
+      },
+      {
+        "topic": "Четыре контрибьютора",
+        "ask": "Who did what in this project?",
+        "say": "Describe only the work you can open and explain on screen. Git identities and role cards are not proof of independent contribution, and the repository says so.",
+        "where": "docs/WORK_PACKAGES.md, README.md"
+      },
+      {
+        "topic": "Проверка на другом ноутбуке",
+        "ask": "Did someone else reproduce it?",
+        "say": "The run is reproducible on the measured machine. An independent fresh checkout on another laptop has not been recorded yet, so we do not claim it.",
+        "where": "docs/MEASUREMENTS.md, docs/WORK_PACKAGES.md"
+      },
+      {
+        "topic": "xG и прокси-метрики",
+        "ask": "Is this xG?",
+        "say": "No. The source has no provider xG field. We show observed shots and shots on target, and a shots-on-target conversion proxy that we label experimental. Poisson attack and defense ratings are in-sample descriptions.",
+        "where": "docs/GLOSSARY.md, pipeline/proxy_xg.py, pipeline/power_ratings.py"
+      }
+    ]
+  }
 }
