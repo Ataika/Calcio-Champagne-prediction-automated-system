@@ -771,8 +771,11 @@ def main():
     # match_results, all optional/skip-quietly if the enrichment isn't loaded.
     ratings_df = power_ratings.compute(conn)
     power_ratings.write(conn, ratings_df)
-    print(f"[pipeline] power ratings: {ratings_df['team_id'].nunique() if not ratings_df.empty else 0} "
-          f"team-seasons across {ratings_df[['league_code', 'season_name']].drop_duplicates().shape[0] if not ratings_df.empty else 0} league-seasons",
+    # One row is one team-season, so the row count is the team-season count;
+    # nunique() over team_id counts distinct clubs and is reported separately.
+    print(f"[pipeline] power ratings: {len(ratings_df):,} team-seasons "
+          f"({ratings_df['team_id'].nunique() if not ratings_df.empty else 0} clubs) across "
+          f"{ratings_df[['league_code', 'season_name']].drop_duplicates().shape[0] if not ratings_df.empty else 0} league-seasons",
           flush=True)
 
     proxy_xg_df = proxy_xg.compute(conn)
