@@ -107,7 +107,6 @@
       "title": "Pinned CSV acquisition",
       "owner": "neda",
       "body": "loader/get_data.py reads sources.json, checks column order and downloads missing files from a pinned public revision. Downloaded bytes must match SHA-256; installation uses an atomic rename. Existing verified inputs can be reused offline.",
-      "ru": "Проверяется конкретный снимок данных, а не просто доступность URL. Незавершённая загрузка не становится готовым CSV. Существующие файлы автоматически не перезаписываются.",
       "files": [
         "loader/get_data.py",
         "loader/sources.json",
@@ -122,7 +121,6 @@
       "title": "Relational storage",
       "owner": "neda",
       "body": "loader/load_data.py imports fixed-schema tables through PostgreSQL COPY, then creates indices and runs ANALYZE. SQL groups canonical club, season and competition identifiers. Optional match CSVs are validated before replacing stored enrichment.",
-      "ru": "PostgreSQL выбран из-за фиксированных схем и связей по игрокам, клубам, соревнованиям и сезонам. COPY загружает много строк за один поток; индексы строятся после загрузки.",
       "files": [
         "loader/load_data.py",
         "sql/schema.sql",
@@ -152,7 +150,6 @@
       "title": "Bounded API and journal",
       "owner": "jacopo",
       "body": "FastAPI exposes bounded league/season queries, filtered export, two/three-club comparisons with score-derived ranks and covered shot statistics, and saved-model inference. Static HTML/CSS/JavaScript renders the results. Model-based and proxy metrics are labeled separately from observed scores.",
-      "ru": "Интерфейс не загружает миллионы сырых строк и не переобучает модель при движении слайдера. API читает подготовленные таблицы с параметризованным SQL и отдельными соединениями из пула.",
       "files": [
         "app/api.py",
         "app/static/app.js",
@@ -180,83 +177,86 @@
     {
       "id": "neda",
       "account": "nedalozanovska",
-      "name": "Данные и PostgreSQL",
+      "name": "Data and the database",
       "english": "Data and database",
       "color": "wine",
       "minutes": "3:45",
-      "scope": "Источники → валидация → COPY → схема и SQL",
+      "scope": "Sources → validation → bulk load → schema and SQL",
       "must_know": [
-        "Какой снимок данных используется: sources.json, закреплённая ревизия и SHA-256; чем загруженный файл отличается от Git LFS pointer.",
-        "Единица наблюдения: клуб × сезон × соревнование. Отображаемое имя не является ключом.",
-        "Почему PostgreSQL соответствует фиксированным столбцам и связям; почему COPY быстрее построчных INSERT для этой загрузки.",
-        "Что делает индекс (team_id, season_name, competition_id), почему он создаётся после COPY и зачем нужен ANALYZE.",
-        "Опциональность football-data.co.uk, сопоставление названий клубов, проверка счетов и борьба с дубликатами.",
-        "Лицензия первичного источника пока не подтверждена; публичная скачиваемость не доказывает открытую лицензию."
+        "Which exact copy of the data we use. loader/sources.json pins one revision of the upstream repository — a revision is a specific saved version, like a dated edition of a report — and stores a SHA-256 checksum for every file. A checksum is a fingerprint of the file's contents: change one character and the fingerprint changes. That is how we prove we loaded the data we documented.",
+        "One row of our analysis is one club, in one season, in one competition. The club's name is only a label. Two spellings of the same club must never become two clubs, so every join uses the numeric club ID, not the name.",
+        "Why a relational (SQL) database: our eleven files have fixed columns, and we constantly combine players with clubs, seasons and competitions. That combining is called a join, and relational databases are built for it. A document database would store the same facts but make these joins harder, not easier.",
+        "What COPY does: it is PostgreSQL's bulk-loading command. It streams a whole file into a table instead of sending one INSERT statement per row, which is why 5,743,186 rows load in about ten seconds.",
+        "Why we build indices after loading, not before. An index works like the index at the back of a book: it makes lookups fast, but it must be updated for every row inserted. Building it once after the import is faster than maintaining it during the import. ANALYZE then refreshes the statistics the database uses to pick a query plan.",
+        "The match files from football-data.co.uk are optional. Without them the system still runs and the interface states that coverage is missing instead of showing zeros. Club names in those files are mapped to our IDs, identical fixtures load once, and contradictory scores stop the replacement before stored matches change.",
+        "The licence of the primary source is not confirmed. We checked: there is no licence file at the pinned revision. Being publicly downloadable is not permission to reuse. Say this plainly — it is a known open item, not a mistake to hide.",
+        "One legacy table (team_competitions_seasons) differs from the current upstream file: 196,378 rows with seven fields locally, 58,247 rows with 29 fields upstream. We kept the local file instead of silently replacing it, and the Champagne Index and the model do not use it."
       ],
       "show": [
-        "Открыть loader/sources.json: ревизия, URL, SHA-256 и порядок столбцов одного источника.",
-        "Показать ключ агрегации в sql/champagne_queries.sql и объяснить MAX(team_name) как выбор подписи.",
-        "Показать пример ошибочного счёта/дубликата в tests/test_match_loader.py и ожидаемое поведение."
+        "Open loader/sources.json on screen and read one entry aloud: the revision, the file name, its checksum and the expected column order.",
+        "Open sql/champagne_queries.sql and point at the GROUP BY: club ID, season, competition. Explain that MAX(team_name) only picks a label to display.",
+        "Open tests/test_match_loader.py and show one rejected case: a fixture whose stated result disagrees with its score never becomes a stored match."
       ],
       "script_en": "Our data layer uses eleven pinned CSV tables. We chose PostgreSQL because the records have fixed schemas and are joined by player, club, competition and season. The loader validates headers, uses COPY for bulk import, and builds indices afterwards. We aggregate by canonical identifiers so name aliases do not duplicate observations. An optional match source adds actual scorelines and standings. Invalid or duplicate matches are handled explicitly. The source is publicly downloadable, but its licence is still unconfirmed; we do not claim that this requirement is resolved.",
       "handoff_en": "With the data stored consistently, the next step is to define a valid season-to-season target and evaluate it.",
       "exercises": [
-        "Объясни, почему две строки с разными названиями одного клуба нельзя считать двумя наблюдениями.",
-        "На бумаге проследи 0–0, будущий матч без FTR и два противоречивых счёта одного матча.",
-        "Запусти тесты загрузчика и объясни причину каждого отказа, не ограничиваясь словом validation."
+        "Explain a checksum to someone outside the course in two sentences, without using the word hash.",
+        "Say why loading 5.74 million rows with COPY is faster than 5.74 million INSERT statements.",
+        "Describe what breaks if we join clubs by name instead of by ID, and give a concrete example from the data (Inter, Internazionale)."
       ],
       "avoid": [
-        "Все источники имеют открытую лицензию.",
-        "Индекс ускоряет любой запрос в 145 раз.",
-        "Ноль в данных всегда означает подтверждённое отсутствие события."
+        "Our data is open source.",
+        "The database cleans the data for us.",
+        "A zero transfer fee means the player moved for free."
       ],
       "lookup": [
         {
           "path": "loader/sources.json",
-          "why": "Закреплённая ревизия, URL, SHA-256 и порядок столбцов каждого из 11 источников. Открывай этот файл, а не рассказывай про него словами."
+          "why": "The pinned revision, file list, SHA-256 checksums and expected column order. Open this file during the defense instead of describing it."
         },
         {
           "path": "loader/get_data.py",
-          "why": "Проверка заголовков и контрольной суммы, временный файл и атомарная установка — ответ на вопрос про обрыв загрузки."
+          "why": "Header and checksum verification, download to a temporary file, atomic install. This is the answer to “what if the download is interrupted?”"
         },
         {
           "path": "loader/load_data.py",
-          "why": "COPY в PostgreSQL, валидация матчей, `parse_match_extras`, очистка устаревшего enrichment при пропавшем источнике."
+          "why": "Bulk COPY into PostgreSQL, match validation, parse_match_extras, and clearing stale match rows when the optional source disappears."
         },
         {
           "path": "sql/schema.sql",
-          "why": "Схема, индексы и аддитивные ALTER для новых столбцов матчей: существующая база обновляется без потери загруженных счетов."
+          "why": "Tables, indices and additive ALTER statements for the new match columns, so an existing database upgrades without losing loaded scores."
         },
         {
           "path": "sql/champagne_queries.sql",
-          "why": "Ключ агрегации клуб × сезон × соревнование и MAX(team_name) как выбор подписи, а не ключа."
+          "why": "The aggregation key club × season × competition, and MAX(team_name) used only as a display label."
         },
         {
           "path": "sql/team_name_map.sql",
-          "why": "Сопоставление названий клубов с каноническими идентификаторами перед join матчей."
+          "why": "Mapping of club names to canonical IDs before any match join, so alternative spellings cannot duplicate a club."
         },
         {
           "path": "tests/test_acquisition.py",
-          "why": "Что именно проверено в загрузке: плохой хэш, плохой заголовок, обрыв передачи — на фиктивных HTTP-ответах."
+          "why": "What the acquisition tests actually prove: a wrong checksum, a wrong header and an interrupted transfer install nothing."
         },
         {
           "path": "tests/test_match_loader.py",
-          "why": "Дубли и противоречивые счета, двух- и четырёхзначные годы, валидные 0–0."
+          "why": "Duplicate and contradictory fixtures, two- and four-digit years, and valid 0–0 draws."
         },
         {
           "path": "docs/SOURCES.md",
-          "why": "Провенанс, расхождение legacy metadata table и граница лицензии — твой ответ на лицензионный вопрос."
+          "why": "Provenance, the legacy metadata difference and the licence boundary — your answer to the licence question."
         }
       ],
       "closing": [
-        "Ты открываешь защиту: слайды 1–3, 00:00–03:45. Темп всей команды задаёшь ты — не разгоняйся, первые 20 секунд говори медленно.",
-        "Начни с вопроса, понятного вне курса, и сразу раздели два вопроса: динамика следующего сезона и описательная связь в том же сезоне.",
-        "Открой `loader/sources.json` на экране и покажи один реальный элемент манифеста: ревизию, SHA-256 и порядок столбцов. Это сильнее любого слайда.",
-        "Про лицензию говори первой, до вопроса экзаменатора: ревизия закреплена, лицензия не подтверждена, сырые данные не распространяем.",
-        "Про legacy metadata table тоже скажи сама: одна таблица отличается от свежей нормализованной загрузки, в центральный индекс и модель она не входит.",
-        "Обоснование PostgreSQL держи в одном предложении: фиксированные столбцы и связи по игрокам, клубам, сезонам и соревнованиям.",
-        "Передай слово по скрипту `handoff_en` — не импровизируй переход, это съедает секунды."
-      ]
+        "You open the defense: slides 1–3, 00:00–03:45. You set the pace for the whole team, so speak slowly for the first twenty seconds.",
+        "Start with the question in plain language, then separate the two different questions immediately: what happens in the next season, and what we only observe within the same season.",
+        "Open loader/sources.json on the screen rather than describing it. One real manifest entry is more convincing than any slide.",
+        "Raise the licence yourself, before the examiner asks: the revision is pinned, the licence is not confirmed, and we do not redistribute the raw data.",
+        "Mention the legacy metadata table yourself too: one table differs from the current upstream version, and the central index and model do not use it.",
+        "Keep the database justification to one sentence: fixed columns and constant joins by player, club, season and competition.",
+        "Hand over with the prepared sentence instead of improvising — an improvised handover costs ten seconds you do not have."
+      ],
+      "language": "en"
     },
     {
       "id": "lill",
@@ -344,91 +344,93 @@
         "Если спросят про Lab: отдельная модель на всех данных для исследования, её собственная подгонка не является независимым тестом.",
         "Про любую связь говори «accompanies», «is associated with». Слово «causes» на твоей части стоит дороже всего.",
         "Про xG отвечай коротко: поля провайдера нет, есть реальные удары и экспериментальный прокси по ударам в створ."
-      ]
+      ],
+      "language": "ru"
     },
     {
       "id": "jacopo",
       "account": "jacoposcaccianoce",
-      "name": "API и интерфейс",
+      "name": "The application and the demo",
       "english": "Application and demo",
       "color": "blue",
       "minutes": "3:45",
-      "scope": "API → состояние страницы → сравнение → сценарии → демо",
+      "scope": "API → page states → comparison → scenarios → live demo",
       "must_know": [
-        "Почему FastAPI читает подготовленные таблицы вместо выдачи миллионов исходных строк в браузер.",
-        "Состояние league/season/teams в URL; проверка параметров, read-only pool и ограничение времени SQL-запроса.",
-        "Как считается очное сравнение с позиции каждого клуба: дома/в гостях меняются goals_for и goals_against.",
-        "При отсутствии матчевого CSV показывается отсутствие покрытия; это не доказательство отсутствия встреч и не 0–0.",
-        "Как Lab получает точные пять входов для клуба/сезона/соревнования, ограничивает attacking_spend общим бюджетом и отбрасывает устаревшие ответы.",
-        "Что проверяют unittest, live API checks и реальный браузер; как читать /api/health и почему наличие одной таблицы недостаточно.",
-        "Serie A 24/25 comparison: Inter 79 GF, 35 GA, +44 GD, attack rank 1 and defense rank 2; Milan 61, 43, +18, attack rank 3 and defense rank 7. Ranks are by per-match scored/conceded goals in the league-season.",
-        "xG is absent from the actual loaded match schema. Do not infer it from goals or player aggregates.",
-        "The optional player source has goalkeeper conceded totals. They exactly match the actual scoreboard GA in 366 of 388 complete top-five club-seasons; clean-sheet totals agree in 269. The UI uses actual scorelines for league ranks."
+        "What an API is here: a small set of web addresses (endpoints) that return prepared results as JSON — plain text data that a browser can read. The browser asks, the server answers with a few hundred rows, never with the millions of raw rows in the database.",
+        "Why that matters: the SQL, the validation and the credentials stay on the server. The page only displays what the server already prepared and checked.",
+        "The numbers of your own demo pair, so you never read them off the screen for the first time while presenting: in Serie A 24/25 Inter recorded 79 GF, 35 GA and +44 GD (attack rank 1, defense rank 2) and Milan 61, 43 and +18 (ranks 3 and 7); their two meetings ended 1–2 and 1–1, so the head-to-head total is 2–3.",
+        "The three states that are easy to confuse: no coverage for this league and season, coverage exists but the two clubs never met, and a real completed 0–0 draw. The interface shows a different message for each and never invents a score.",
+        "What the HTTP status codes mean in our app: 422 means the input is invalid, for example the same club selected twice; 404 means the requested club or season is not in scope; 503 means the data or the model is not ready yet, which is a readiness problem, not a bad request.",
+        "How head-to-head goals are counted: for each completed meeting we take the selected club's perspective, so its goals are the home score when it played at home and the away score otherwise. Swapping the two clubs swaps the totals. Wins, draws and points follow from those scores.",
+        "What protects the Lab inputs: the server rejects values that are not finite numbers, checks the allowed range and refuses an attacking budget larger than the total budget. The sliders also limit the range, but the server check is the one that matters, because anyone can call the API directly.",
+        "Every new field reads from a table only after checking that the table exists. If the optional match data was never loaded, the API answers “absent” instead of failing — that is why the demo survives a partial setup.",
+        "What the automated checks cover: 43 unit tests, 16 live API checks and 15 real-browser checks, including mobile layout at 390 pixels. They are scoped evidence, not proof that no bug exists."
       ],
       "show": [
-        "Выбрать Serie A 24/25, открыть Inter/Milan и показать 1–2, 1–1, суммарные голы 2–3.",
-        "Показать, что без обогащения интерфейс даёт понятное сообщение, а не выдуманные значения.",
-        "Открыть Lab, изменить один вход, дождаться ответа и выполнить Reset. Не тратить время демо на все слайдеры."
+        "Open /api/docs and call one endpoint live, then show the same numbers on the page: the page is a view of the API, not a separate truth.",
+        "Open a comparison for two clubs in a season with match data, then switch to a league-season without it and read the coverage message aloud.",
+        "In the Lab, move one input, show the new prediction, then press Reset and explain that a slider changes a model input, not reality."
       ],
       "script_en": "The browser reads a bounded API over prepared results. League and season filters are explicit, and the URL preserves the selected scope. In the comparison, season totals and actual head-to-head meetings are separate. Serie A 24/25 shows Inter at 79 for and 35 against (+44), ranked first in goals scored per match and second in goals conceded per match. Milan has 61 for and 43 against (+18), ranked third and seventh. The source has no xG field. For Inter and Milan in 24/25, the recorded league scores are 1–2 and 1–1, giving head-to-head goals of two to three. Missing match enrichment is reported explicitly. The Lab loads the five real club-season inputs, calls a saved model and rejects invalid budgets or non-finite numbers. We verify behavior at three levels: regression tests, live data contracts and desktop/mobile browser checks.",
       "handoff_en": "The final question is whether this system runs reproducibly and what resources it uses.",
       "exercises": [
-        "Поменяй клубы местами в URL и объясни, какие метрики должны поменять столбцы, а какие остаться равными.",
-        "Объясни различия HTTP 422, 404 и 503 на примерах этого API.",
-        "Проведи трёхминутное демо без чтения README: обзор → сравнение → Lab → Project."
+        "Explain the difference between 422 and 503 to someone who has never used an API, in one sentence each.",
+        "Say out loud why “no recorded meeting” and “0–0” must look different on the screen.",
+        "Call /api/head-to-head for two clubs from the same city and verify that reversing the clubs swaps goals for and goals against."
       ],
       "avoid": [
-        "Очные ассисты или xG доступны в матчевом источнике.",
-        "Модель обучается заново при каждом движении слайдера.",
-        "Успешный HTTP 200 одной страницы доказывает корректность всех данных."
+        "Missing data is the same as zero.",
+        "The sliders in the Lab show what a transfer would cause.",
+        "The tests prove the application has no bugs."
       ],
       "lookup": [
         {
           "path": "app/api.py",
-          "why": "Контракты эндпоинтов, 422 / 404 / 503, bound-параметры, read-only транзакции и guard на существование таблиц."
+          "why": "Endpoint contracts, the 422 / 404 / 503 answers, bound parameters, read-only transactions and the table-existence guard behind every new field."
         },
         {
           "path": "app/static/app.js",
-          "why": "Состояния страницы: отсутствие покрытия, отсутствие встреч и реальный 0–0 — три разных состояния."
+          "why": "The page states: missing coverage, no recorded meeting and a real 0–0 are three different outcomes."
         },
         {
           "path": "app/static/api-docs.html",
-          "why": "Готовая документация API: открывается на `/api/docs` во время демо."
+          "why": "The API documentation page you open during the demo at /api/docs."
         },
         {
           "path": "scripts/check_live.py",
-          "why": "Проверка живых контрактов и подготовленных выходов — запускается после подъёма стека."
+          "why": "The 16 live checks of the API contracts and the prepared outputs; run it after the stack is healthy."
         },
         {
           "path": "scripts/browser_check.mjs",
-          "why": "Браузерные проверки реальных сценариев и мобильной раскладки, скриншоты в `artifacts/`."
+          "why": "The 15 real-browser checks of actual flows and the mobile layout; screenshots land in artifacts/."
         },
         {
           "path": "scripts/site_check.mjs",
-          "why": "Проверка офлайн-сайта пособия, результат в `defense/site-check.json`."
+          "why": "The nine checks of the offline study site; the result is written to defense/site-check.json."
         },
         {
           "path": "tests/test_head_to_head.py",
-          "why": "Перспектива выбранного клуба: голы за и против меняются местами при развороте сравнения."
+          "why": "Proof that goals for and goals against swap when the two compared clubs are reversed."
         },
         {
           "path": "tests/test_health.py",
-          "why": "Почему 503 означает «данные или модель не готовы», а не ошибку запроса."
+          "why": "Why 503 means “data or model not ready” rather than “bad request”."
         },
         {
           "path": "docs/FRONTEND_HANDOFF.md",
-          "why": "Контракт данных для внешнего фронтенда — доказательство, что presentation отделён от обработки."
+          "why": "The data contract for any other frontend — evidence that presentation is separated from processing."
         }
       ],
       "closing": [
-        "Твои слайды 6 (демо, 06:30–09:15) и 10 (закрытие, 14:00–15:00). Демо — самая длинная часть выступления и самая уязвимая.",
-        "Пять шагов демо держи по порядку из таблицы ниже и вслух называй, что ожидаешь увидеть, до того как это появится на экране.",
-        "Если что-то не поднялось — не чини Docker при экзаменаторе. Одна фраза «переходим на записанные доказательства» и скриншоты из `defense/site/assets/`.",
-        "Покажи состояние «нет данных» специально: это доказывает, что интерфейс не выдумывает 0–0.",
-        "В Lab меняй ровно один ввод, потом Reset. Один фактор за раз — это же правило, что в измерениях.",
-        "На вопрос «зачем API, а не графики из таблиц» отвечай про размер: миллионы строк не уходят в браузер, SQL и валидация остаются на сервере.",
-        "Закрывая, назови границы проекта и незакрытые пункты сам — это последнее, что услышит экзаменатор, и честность здесь работает в плюс."
-      ]
+        "You own slide 6 (the live demo, 06:30–09:15) and slide 10 (the close, 14:00–15:00). The demo is the longest single block and the most fragile one.",
+        "Follow the five demo steps in order and say what you expect to appear before it appears. That turns a loading delay into a prediction instead of an awkward silence.",
+        "If something is not up, do not debug Docker in front of the examiner. One sentence — “we move to the recorded evidence” — then use the screenshots in defense/site/assets.",
+        "Show the missing-coverage state on purpose. It proves the interface does not invent a 0–0 result.",
+        "In the Lab change exactly one input, then reset. One factor at a time is the same discipline we use in the measurements.",
+        "If asked why an API instead of plotting the tables directly: millions of rows never travel to the browser, and SQL plus validation stay on the server.",
+        "You speak last. Name the project's boundaries and the open items yourself — the examiner hears honesty as strength, not as weakness."
+      ],
+      "language": "en"
     },
     {
       "id": "atai",
@@ -514,7 +516,8 @@
         "Рост 25 / 50 / 100% объясняй нелинейностью: 4× строк дали 4.40× загрузки и 3.35× агрегации из-за фиксированных затрат, планов и кэшей.",
         "Меняй один фактор за раз — скажи это вслух, это прямое требование протокола измерений из брифа.",
         "В конце назови, что осталось: лицензия, независимый запуск на другом ноутбуке, резервное видео и фактический состав участников. Не заявляй их выполненными."
-      ]
+      ],
+      "language": "ru"
     }
   ],
   "questions": [
@@ -522,42 +525,36 @@
       "id": "q1",
       "role": "neda",
       "question": "Why PostgreSQL rather than MongoDB?",
-      "ru": "Почему PostgreSQL?",
       "answer": "The source tables have fixed columns and relational links by player, club, season and competition. PostgreSQL supports those joins, native COPY and indexed lookups with a clear schema. A different database could work, but this choice follows the data shape."
     },
     {
       "id": "q2",
       "role": "neda",
       "question": "What identifies one observation?",
-      "ru": "Что является ключом строки?",
       "answer": "For the analytical output it is club ID, season and competition ID. A club’s display name is a label, not its identity. We aggregate canonical keys to prevent alias names from creating duplicate observations."
     },
     {
       "id": "q3",
       "role": "neda",
       "question": "Why build indices after loading?",
-      "ru": "Почему индексы после COPY?",
       "answer": "Maintaining indices during a bulk load adds work to every inserted row. We import with COPY, then build the required indices and ANALYZE the updated tables so the next pipeline has current planner statistics."
     },
     {
       "id": "q4",
       "role": "neda",
       "question": "Is your source openly licensed?",
-      "ru": "Подтверждена ли лицензия?",
       "answer": "We verified the pinned source revision, headers and checksums, but did not establish an explicit upstream licence. We document this as unresolved and exclude raw data from the repository. Public downloadability alone is insufficient."
     },
     {
       "id": "q5",
       "role": "neda",
       "question": "What happens if a download is interrupted?",
-      "ru": "Что будет при обрыве загрузки?",
       "answer": "The downloader writes a temporary file and installs it atomically only after checksum and header validation. An interrupted or corrupt download is not accepted as a complete source. Tests exercise these failures using fake HTTP responses."
     },
     {
       "id": "q6",
       "role": "neda",
       "question": "How do you handle duplicate match rows?",
-      "ru": "Как обрабатываются дубли матчей?",
       "answer": "Identical league/season/date/home/away fixtures are imported once. Conflicting scores for the same fixture stop replacement before stored match rows are changed. Missing optional input clears old enrichment on the next loader run."
     },
     {
@@ -620,42 +617,36 @@
       "id": "q15",
       "role": "jacopo",
       "question": "Why have an API instead of plotting raw tables directly?",
-      "ru": "Зачем API?",
       "answer": "The API exposes small prepared outputs under an explicit league and season. This avoids moving millions of raw rows to the browser, keeps SQL and validation on the server and separates presentation from processing."
     },
     {
       "id": "q16",
       "role": "jacopo",
       "question": "How are head-to-head goals calculated?",
-      "ru": "Как считаются голы друг другу?",
       "answer": "For each completed meeting, the selected club’s perspective determines whether the home or away score is goals for. Reversing the compared clubs swaps their totals. Wins, draws, losses and points are derived from those actual scores."
     },
     {
       "id": "q17",
       "role": "jacopo",
       "question": "Does no recorded match mean a 0–0 draw?",
-      "ru": "Нет данных — это 0–0?",
       "answer": "No. No coverage, no recorded meetings and a completed 0–0 draw are different states. The API reports enrichment availability and the interface shows an explicit message instead of inventing a score."
     },
     {
       "id": "q18",
       "role": "jacopo",
       "question": "What prevents invalid scenario inputs?",
-      "ru": "Как защищены входы Lab?",
       "answer": "The API rejects non-finite numbers, checks bounds and requires attacking spend not to exceed total spend. The browser also clamps the sliders. Server-side validation remains necessary even when the UI enforces the same rule."
     },
     {
       "id": "q19",
       "role": "jacopo",
       "question": "What do HTTP 422, 404 and 503 mean here?",
-      "ru": "Что означают ошибки API?",
       "answer": "422 indicates invalid input, such as selecting the same club twice. 404 means the requested club-season scope is unavailable. 503 indicates temporary data/model unavailability or an incomplete application output state."
     },
     {
       "id": "q20",
       "role": "jacopo",
       "question": "What do your tests prove?",
-      "ru": "Что доказывают тесты?",
       "answer": "Regression tests cover known failure cases, live checks validate the prepared outputs and API contracts, and browser checks exercise actual flows and mobile layout. They provide scoped evidence, not a guarantee that every possible bug is absent."
     },
     {
@@ -803,7 +794,7 @@
         "Separate question: does the index track same-season league finish?",
         "A reproducible data system with measured infrastructure."
       ],
-      "notes": "Начни с вопроса, понятного человеку вне курса. Не обещай предсказывать победителя матча. Сразу раздели будущую динамику и описательную связь в том же сезоне."
+      "notes": "Open with a question a non-specialist understands. Do not promise match predictions. Separate the next-season question from the same-season association immediately."
     },
     {
       "title": "Know the source",
@@ -816,7 +807,7 @@
         "Headers, hashes and atomic acquisition; raw data excluded from Git",
         "Boundary: source licence still unconfirmed."
       ],
-      "notes": "Покажи один реальный элемент manifest. Назови отличие legacy metadata table от нормализованной свежей загрузки; основная модель эту таблицу не использует. Не называй лицензию открытой."
+      "notes": "Show one real manifest entry. Mention the legacy metadata table difference yourself; the main model does not use it. Do not call the licence open."
     },
     {
       "title": "From CSV to the screen",
@@ -829,7 +820,7 @@
         "Compose waits for health and successful completion",
         "Model and measurement artifacts use explicit mounts."
       ],
-      "notes": "Проследи одну стрелку: CSV → COPY rows → SQL output → HTTP JSON → chart. Уточни, что measure запускается отдельно, а модели и CSV не входят в Docker build context."
+      "notes": "Name the four containers and the order Compose starts them in. Arrows are files, rows, SQL queries and HTTP responses — say what travels along each one."
     },
     {
       "title": "Define the observation before fitting",
@@ -872,7 +863,7 @@
         "Shots / shots on target / corners: coverage 8,907 of 8,908 matches",
         "Poisson model ranks are in-sample; the SOT conversion proxy is not xG"
       ],
-      "notes": "On the comparison, distinguish score-based GF/GA/GD ranks from the direct-match block. Point out shot-data coverage and call the SOT estimate a rough proxy, not xG. Poisson ratings use the same season scores and are in-sample. If match files are missing, show honest coverage."
+      "notes": "Say what you expect before it appears on screen. If anything is not up, switch to the recorded screenshots in one sentence instead of debugging."
     },
     {
       "title": "What the data supports",
@@ -926,7 +917,7 @@
         "Explain the actual work of each real participant",
         "Take questions on any part of the system."
       ],
-      "notes": "Не выдавай распределение email за подтверждение самостоятельной работы. Каждый называет реально сделанное и проверенное. Финальная фраза: reproducible system, modest evidence, transparent limits."
+      "notes": "Name the open items yourself: licence, independent machine, backup recording and actual contributions. Close on what the evidence supports, not on a promise."
     }
   ],
   "measurements": {
@@ -1014,42 +1005,42 @@
   "checklist": [
     {
       "id": "explain",
-      "label": "Каждый объясняет GET → STORE → PROCESS → SHOW без подсказки",
+      "label": "Everyone can walk through GET → STORE → PROCESS → SHOW without prompting",
       "kind": "rehearsal"
     },
     {
       "id": "own-role",
-      "label": "Каждый прошёл свою роль, упражнения и вопросы",
+      "label": "Everyone has worked through their own track, its exercises and its questions",
       "kind": "rehearsal"
     },
     {
       "id": "cross-role",
-      "label": "Каждый ответил минимум на два вопроса вне своей роли",
+      "label": "Everyone has answered at least two questions from outside their own track",
       "kind": "rehearsal"
     },
     {
       "id": "15-min",
-      "label": "Презентация укладывается в 15 минут; все реальные участники говорят",
+      "label": "The presentation fits into 15 minutes and every real participant speaks",
       "kind": "rehearsal"
     },
     {
       "id": "second-laptop",
-      "label": "Другой участник запустил свежий checkout по README и записал результат",
+      "label": "Another participant ran a fresh checkout from the README alone and recorded the result",
       "kind": "external"
     },
     {
       "id": "license",
-      "label": "Подтверждена лицензия первичного источника либо выбран допустимый источник",
+      "label": "The primary source's licence is confirmed, or a clearly licensed source is chosen instead",
       "kind": "external"
     },
     {
       "id": "backup",
-      "label": "Записано и проверено резервное двухминутное видео",
+      "label": "The two-minute backup recording exists and has been played back once",
       "kind": "external"
     },
     {
       "id": "contributions",
-      "label": "Указаны фактические участники и реальные выполненные ими изменения/проверки",
+      "label": "The actual participants and the real changes and checks each of them made are stated",
       "kind": "external"
     }
   ],
@@ -1103,61 +1094,123 @@
   "exam_day": {
     "dates": [
       {
-        "date": "12 ноября 2026",
-        "label": "Чекпоинт",
-        "format": "5 минут",
-        "what": "Сквозное демо, один видимый результат и первое измеренное время полного прогона. Красивый интерфейс не требуется.",
-        "source": "CIDS Lecture 15, стр. 37–39"
+        "date": "12 November 2026",
+        "label": "Checkpoint",
+        "format": "5 minutes",
+        "what": "One end-to-end demo, one visible result and the first measured full-run time. A polished interface is not required.",
+        "source": "CIDS Lecture 15, pp. 37–39"
       },
       {
-        "date": "20 / 26 ноября 2026",
-        "label": "Финальная защита",
-        "format": "15 минут + 5 минут вопросов",
-        "what": "Говорят все реальные участники. Рекомендованный хронометраж: вопрос и данные 3 мин, архитектура 2, живое демо 3, измерения 3, проблемы 2, вклад 2.",
-        "source": "CIDS Lecture 15, стр. 37–39"
+        "date": "20 / 26 November 2026",
+        "label": "Final defense",
+        "format": "15 minutes + 5 minutes of questions",
+        "what": "Every real participant speaks. Suggested split: question and data 3 min, architecture 2, live demo 3, measurements 3, problems 2, contributions 2.",
+        "source": "CIDS Lecture 15, pp. 37–39"
       }
     ],
     "before": [
-      "За 30 минут: `docker compose up -d --build`, затем открыть `/api/health` и дождаться `ready=true` вместе с завершёнными loader и pipeline.",
-      "Открыть заранее четыре вкладки: Overview (Serie A 24/25), сравнение Inter / Milan, Lab и страницу Project с числами.",
-      "Открыть офлайн-копию пособия `defense/site/index.html` и `defense/site/downloads/Presentation.pdf` — они работают без сети и без базы.",
-      "Проверить, что скриншоты `defense/site/assets/*-desktop.png` на месте: это резерв, если Docker не поднимется.",
-      "Отключить уведомления, подключить питание, проверить зеркалирование экрана и масштаб шрифта в браузере.",
-      "Решить заранее, кто ведёт демо и кто держит таймер; таймер есть в `defense/site/presentation.html` (клавиша N — заметки, F — полный экран)."
+      "Thirty minutes ahead: run `docker compose up -d --build`, then open /api/health and wait for `ready=true` with the loader and pipeline finished.",
+      "Open four tabs in advance: Overview (Serie A 24/25), the Inter / Milan comparison, the Lab, and the Project page with the numbers.",
+      "Open the offline study site `defense/site/index.html` and `defense/site/downloads/Presentation.pdf`: both work without a network and without the database.",
+      "Check that the screenshots in `defense/site/assets/*-desktop.png` are present. They are the fallback if Docker does not come up.",
+      "Turn off notifications, connect the charger, test screen mirroring and increase the browser font size.",
+      "Decide in advance who drives the demo and who watches the clock. The timer is built into `defense/site/presentation.html` (N for notes, F for fullscreen)."
     ],
     "qa": [
-      "Отвечай тремя шагами: короткий ответ одним предложением → основание (файл или число) → ограничение.",
-      "Каждое число называй с выборкой и единицей: «r = −0.79 на 388 клуб-сезонах в одном сезоне», а не «корреляция высокая».",
-      "Не знаешь ответа — скажи, где он лежит, и не придумывай: «это в docs/MEASUREMENTS.md, метод измерения памяти описан там».",
-      "Вопрос не по твоей части — передай одной фразой владельцу направления, не пересказывай чужую зону приблизительно.",
-      "Никогда не превращай связь в причину: говори accompanies, is associated with, а не causes или improves.",
-      "Если спросили про слабое место — отвечай прямо и первым. Признанное ограничение выглядит сильнее, чем защищаемая неточность."
+      "Answer in three steps: one short sentence, then the evidence (a file or a number), then the limitation.",
+      "Give every number with its sample and unit: “r = −0.79 across 388 club-seasons, within the same season”, not “the correlation is high”.",
+      "If you do not know, say where the answer lives instead of guessing: “that is in docs/MEASUREMENTS.md, the memory sampling method is described there”.",
+      "If the question belongs to someone else's part, hand it over in one sentence rather than approximating their area.",
+      "Never turn an association into a cause. Say “accompanies” or “is associated with”, never “causes” or “improves”.",
+      "If asked about a weak point, answer it first and directly. An acknowledged limitation is stronger than a defended inaccuracy."
     ],
     "honest": [
       {
-        "topic": "Лицензия первичного источника",
+        "topic": "Licence of the primary source",
         "ask": "Is your data openly licensed?",
-        "say": "We pinned the source revision and verified headers and checksums, but we did not establish an explicit reuse licence. We document it as unresolved and we do not redistribute the raw data. Public downloadability is not a licence.",
-        "where": "docs/SOURCES.md, docs/COURSE_REQUIREMENTS.md"
+        "say": "We pinned the source revision and verified headers and checksums, but there is no licence file, so we did not establish an explicit reuse licence. We document it as unresolved and we do not redistribute the raw data. Public downloadability is not a licence.",
+        "where": "docs/SOURCES.md, docs/LICENCE_DECISION.md"
       },
       {
-        "topic": "Четыре контрибьютора",
+        "topic": "Four contributors",
         "ask": "Who did what in this project?",
         "say": "Describe only the work you can open and explain on screen. Git identities and role cards are not proof of independent contribution, and the repository says so.",
         "where": "docs/WORK_PACKAGES.md, README.md"
       },
       {
-        "topic": "Проверка на другом ноутбуке",
+        "topic": "Reproduction on another machine",
         "ask": "Did someone else reproduce it?",
-        "say": "The run is reproducible on the measured machine. An independent fresh checkout on another laptop has not been recorded yet, so we do not claim it.",
-        "where": "docs/MEASUREMENTS.md, docs/WORK_PACKAGES.md"
+        "say": "The run is reproducible on the measured machine, and we also rebuilt it from a clean clone. An independent fresh checkout on another person's laptop has not been recorded yet, so we do not claim it.",
+        "where": "docs/FRESH_CHECKOUT.md, docs/MEASUREMENTS.md"
       },
       {
-        "topic": "xG и прокси-метрики",
+        "topic": "xG and proxies",
         "ask": "Is this xG?",
-        "say": "No. The source has no provider xG field. We show observed shots and shots on target, and a shots-on-target conversion proxy that we label experimental. Poisson attack and defense ratings are in-sample descriptions.",
+        "say": "No. The source has no provider xG field. We show observed shots and shots on target, and a shots-on-target conversion proxy that we label experimental. The Poisson attack and defense ratings describe the season they are fitted on.",
         "where": "docs/GLOSSARY.md, pipeline/proxy_xg.py, pipeline/power_ratings.py"
       }
     ]
-  }
+  },
+  "basics": [
+    {
+      "term": "Container / Docker Compose",
+      "plain": "A container is one packaged program with everything it needs to run. Compose is the file that starts our four containers in the right order: the database first, then the loader, then the processing pipeline, then the web application."
+    },
+    {
+      "term": "Relational database / PostgreSQL",
+      "plain": "A store of tables with fixed columns that can be combined by shared keys. We use PostgreSQL 16. Combining two tables on a shared key is called a join."
+    },
+    {
+      "term": "Schema",
+      "plain": "The declared shape of the tables: which columns exist and what type each one holds. It is written in sql/schema.sql."
+    },
+    {
+      "term": "COPY and index",
+      "plain": "COPY loads a whole file into a table in one stream. An index is a lookup structure, like the index of a book: it makes selective queries fast and is built after the bulk load."
+    },
+    {
+      "term": "Pipeline",
+      "plain": "The processing step between the database and the web page. It reads tables, computes our measures and the model, and writes prepared result tables back."
+    },
+    {
+      "term": "API / endpoint / JSON",
+      "plain": "The API is the set of web addresses the page calls. Each address is an endpoint. JSON is the plain-text format of the answer."
+    },
+    {
+      "term": "Champagne Index",
+      "plain": "Our own measure of attacking output: recorded goals plus assists, divided by the number of matches the source reports for that club-season. It is a proxy, not an official statistic."
+    },
+    {
+      "term": "Target and feature",
+      "plain": "The target is what the model tries to predict — here the change in the index in the next consecutive season. A feature is an input the model uses to predict it."
+    },
+    {
+      "term": "Chronological holdout",
+      "plain": "We train the model on earlier seasons and test it on later seasons it has never seen. A random split would mix the future into the training data and flatter the result."
+    },
+    {
+      "term": "Baseline",
+      "plain": "The simplest possible prediction, used for comparison. Ours predicts no change at all. A model is only useful if it beats the baseline on the same test rows."
+    },
+    {
+      "term": "R² and MAE",
+      "plain": "R² is the share of variation the model explains, from 0 to 1 — ours is 0.127, which is weak. MAE is the average absolute error in index units — ours is 0.4856 against a baseline of 0.5114, about 5% better. Neither is a percentage of correct answers."
+    },
+    {
+      "term": "Correlation vs. causation",
+      "plain": "A correlation (r) measures how two numbers move together, from −1 to +1. It cannot show that one causes the other. Every result in this project is a correlation, including the red-card and spending findings."
+    },
+    {
+      "term": "Proxy",
+      "plain": "A measurable stand-in for something we cannot measure directly. Our shots-on-target estimate is a proxy for chance quality; it is not xG, which the data source does not contain."
+    },
+    {
+      "term": "Poisson rating",
+      "plain": "A simple statistical model of how many goals each team scores and concedes, fitted to one league-season. It describes that season; it does not forecast new matches."
+    },
+    {
+      "term": "SHAP",
+      "plain": "A method that attributes a model's prediction to its individual inputs, so we can report which feature mattered most without relying on the model's internal importance score."
+    }
+  ]
 }

@@ -70,14 +70,45 @@ th { background:#eceee5; font: bold 8pt Arial; }
 </style>"""
 
 
-def path_table(rows: list[dict]) -> str:
+LABELS = {
+    "en": {
+        "know": "What you need to know", "show": "What to show", "script": "Your spoken part",
+        "handoff": "Hand over", "clock": "Your slots on the clock", "closing": "How to close the exam",
+        "lookup": "Where to look in the project", "exercises": "Practice", "questions": "Questions for your part",
+        "avoid": "Phrasing to avoid", "basics": "Plain-language glossary",
+        "card": "Personal exam guide", "truthful": "A role is a study responsibility. Do not claim authorship or"
+        " a verification you did not perform. Show exactly the changes and commands you ran yourself.",
+        "basics_note": "These definitions are deliberately non-technical. Use them to explain the system to"
+        " someone outside the course, and to answer a question whose wording you do not recognise.",
+    },
+    "ru": {
+        "know": "Что нужно знать", "show": "Что показать", "script": "Короткая речь на английском",
+        "handoff": "Переход", "clock": "Твой тайминг на защите", "closing": "Как закрывать экзамен",
+        "lookup": "Где смотреть в проекте", "exercises": "Практические задания", "questions": "Вопросы по направлению",
+        "avoid": "Какие фразы не использовать", "basics": "Словарь простыми словами",
+        "card": "Персональная карточка защиты", "truthful": "Роль — учебная ответственность. Не заявляй личное"
+        " авторство или самостоятельную проверку, если этого не было. Покажи ровно те изменения и команды,"
+        " которые выполнял(а) лично.",
+        "basics_note": "Определения намеренно нетехнические: ими удобно объяснять систему человеку вне курса"
+        " и отвечать на вопрос, формулировку которого ты не узнал(а).",
+    },
+}
+
+
+def basics_table(d: dict) -> str:
+    rows = "".join(f'<tr><td><b>{esc(x["term"])}</b></td><td>{esc(x["plain"])}</td></tr>' for x in d["basics"])
+    return f'<table><tbody>{rows}</tbody></table>'
+
+
+def path_table(rows: list[dict], language: str = "en") -> str:
+    head = ("Project file", "What to look at in it") if language == "en" else ("Файл в проекте", "Что в нём смотреть")
     cells = "".join(
         f'<tr><td><code>{esc(row["path"])}</code></td><td>{esc(row["why"])}</td></tr>' for row in rows)
-    return ('<table><thead><tr><th>Файл в проекте</th><th>Что в нём смотреть</th></tr></thead>'
+    return (f'<table><thead><tr><th>{esc(head[0])}</th><th>{esc(head[1])}</th></tr></thead>'
             f'<tbody>{cells}</tbody></table>')
 
 
-def role_schedule(d: dict, role_id: str) -> str:
+def role_schedule(d: dict, role_id: str, language: str = "en") -> str:
     """The speaker's own slides with absolute clock positions, so each person
     knows when to start talking and when to stop."""
     rows, clock = [], 0
@@ -88,12 +119,20 @@ def role_schedule(d: dict, role_id: str) -> str:
         rows.append(f'<tr><td>{i}. {esc(s["title"])}</td><td>{esc(s["kicker"])}</td>'
                     f'<td>{start // 60:02d}:{start % 60:02d}–{clock // 60:02d}:{clock % 60:02d}</td>'
                     f'<td>{s["seconds"]} с</td></tr>')
-    return ('<table><thead><tr><th>Слайд</th><th>Блок</th><th>Время</th><th>Длительность</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table>')
+    head = (("Slide", "Block", "Time", "Length") if language == "en"
+            else ("Слайд", "Блок", "Время", "Длительность"))
+    return (f'<table><thead><tr><th>{esc(head[0])}</th><th>{esc(head[1])}</th><th>{esc(head[2])}</th>'
+            f'<th>{esc(head[3])}</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
 
 
-def exam_day(d: dict) -> str:
+def exam_day(d: dict, language: str = "en") -> str:
     e = d["exam_day"]
+    head = {"en": ("Exam day", "Machine and materials", "How to answer questions",
+                   "Uncomfortable questions: answer them first", "Date", "Format",
+                   "What is required", "Topic", "Question", "Answer and evidence"),
+            "ru": ("Экзаменационный день", "Подготовка машины и материалов", "Как отвечать на вопросы",
+                   "Неудобные вопросы: отвечай прямо и первым", "Дата", "Формат",
+                   "Что требуется", "Тема", "Вопрос", "Ответ и где подтверждение")}[language]
     dates = "".join(
         f'<tr><td><b>{esc(x["date"])}</b><br><span class="small">{esc(x["source"])}</span></td>'
         f'<td>{esc(x["label"])} · {esc(x["format"])}</td><td>{esc(x["what"])}</td></tr>' for x in e["dates"])
@@ -101,13 +140,13 @@ def exam_day(d: dict) -> str:
         f'<tr><td>{esc(x["topic"])}</td><td lang="en">{esc(x["ask"])}</td>'
         f'<td lang="en">{esc(x["say"])}<br><span class="small"><code>{esc(x["where"])}</code></span></td></tr>'
         for x in e["honest"])
-    return ('<section class="break"><h2>Экзаменационный день</h2>'
-            '<table><thead><tr><th>Дата</th><th>Формат</th><th>Что требуется</th></tr></thead>'
+    return (f'<section class="break"><h2>{esc(head[0])}</h2>'
+            f'<table><thead><tr><th>{esc(head[4])}</th><th>{esc(head[5])}</th><th>{esc(head[6])}</th></tr></thead>'
             f'<tbody>{dates}</tbody></table>'
-            '<h3>Подготовка машины и материалов</h3>' + number_list(e["before"]) +
-            '<h3>Как отвечать на вопросы</h3>' + bullet_list(e["qa"]) +
-            '<h3>Неудобные вопросы: отвечай прямо и первым</h3>'
-            '<table><thead><tr><th>Тема</th><th>Вопрос</th><th>Ответ и где подтверждение</th></tr></thead>'
+            f'<h3>{esc(head[1])}</h3>' + number_list(e["before"]) +
+            f'<h3>{esc(head[2])}</h3>' + bullet_list(e["qa"]) +
+            f'<h3>{esc(head[3])}</h3>'
+            f'<table><thead><tr><th>{esc(head[7])}</th><th>{esc(head[8])}</th><th>{esc(head[9])}</th></tr></thead>'
             f'<tbody>{honest}</tbody></table></section>')
 
 
@@ -173,58 +212,97 @@ def report(d: dict) -> str:
 
 
 def guide(d: dict) -> str:
+    """The shared team guide. English throughout, because two of the four
+    tracks are studied in English; each role section keeps the wording of
+    that speaker's own card."""
     body = [cover("Team Defense Guide", "Four study tracks · one complete system",
-                  "Русское пособие с проверяемыми фактами, английскими репликами, упражнениями, вопросами экзаменатора и репетицией на 15 минут.",
-                  f"Calcio Champagne · Prepared {d['prepared']} · English phrases are practice material, not claims about individual authorship.")]
-    body.append(f'<h2>Проект за одну минуту</h2><p>{esc(d["summary_ru"])}</p>')
-    body.append('<div class="callout"><b>Новые показатели сравнения.</b> GF — забитые голы; GA — пропущенные; GD = GF−GA. Атакующий ранг строится по голам за матч (чем больше, тем выше место), защитный — по пропущенным за матч (чем меньше, тем выше место). Ранг считается отдельно внутри выбранных лиги и сезона; ничьи делят место. xG отсутствует в загруженной схеме, его нельзя выводить из счёта.</div>')
-    body.append('<h2>План подготовки команды</h2><ol><li>Каждый изучает свою карточку, проходит упражнения и показывает, где подтверждение в репозитории.</li><li>Вместе проследите CSV → PostgreSQL → pipeline → API → экран.</li><li>Проведите 15-минутную репетицию с таймером; не превышайте время своей части.</li><li>Каждый отвечает минимум на два вопроса вне своего направления.</li><li>Проверьте приложение на другом ноутбуке и подготовьте резервное видео.</li></ol>')
-    body.append('<div class="callout warning"><b>Распределение в пособии — план изучения и выступления.</b> Оно само по себе не доказывает, кто писал конкретный код. На защите описывайте фактическую работу, которую вы можете показать.</div>')
+                  "Checkable facts, spoken parts, exercises, examiner questions and a 15-minute rehearsal for the whole team.",
+                  f"Calcio Champagne · Prepared {d['prepared']} · Spoken parts are practice material, not claims about individual authorship.")]
+    body.append(f'<h2>The project in one minute</h2><p>{esc(d["summary_en"])}</p>')
+    body.append('<div class="callout"><b>Reading the comparison numbers.</b> GF is goals scored, GA is goals conceded, '
+                'GD is GF minus GA. The attack rank orders goals scored per match from highest to lowest, the defense rank '
+                'orders goals conceded per match from lowest to highest, both within one league and season, and tied rates '
+                'share a rank. xG is not in the loaded data and cannot be derived from a scoreline.</div>')
+    body.append('<h2>How the team prepares</h2><ol>'
+                '<li>Each person studies their own card, does the exercises and finds the evidence in the repository.</li>'
+                '<li>Together, follow one path end to end: CSV → PostgreSQL → pipeline → API → screen.</li>'
+                '<li>Run the full 15-minute rehearsal with the timer and keep inside your own slot.</li>'
+                '<li>Each person answers at least two questions from another track.</li>'
+                '<li>Run the project on a second laptop and record the two-minute backup demo.</li></ol>')
+    body.append('<div class="callout warning"><b>The split in this guide is a study and speaking plan.</b> '
+                'It does not establish who wrote a given line of code. At the defense, describe the actual work you can show.</div>')
     for r in d["roles"]:
-        body.append(f'<section class="role"><div class="kicker">{esc(r["account"])} · {esc(r["minutes"])} recommended speaking time</div><h2>{esc(r["name"])}</h2><p><b>Область:</b> {esc(r["scope"])}</p><h3>Что знать</h3>{bullet_list(r["must_know"])}<h3>Что показать</h3>{number_list(r["show"])}<h3>Английская реплика для репетиции</h3><div class="callout"><i>{esc(r["script_en"])}</i></div><p><b>Передача слова:</b> “{esc(r["handoff_en"])}”</p><h3>Практика</h3>{number_list(r["exercises"])}<h3>Как закрывать экзамен</h3>{number_list(r["closing"])}<h3>Где смотреть в проекте</h3>{path_table(r["lookup"])}<h3>Избегай</h3>{bullet_list(r["avoid"])}</section>')
-    body.append('<section class="break"><h2>Вопросы экзаменатора</h2><p>Сначала ответь вслух коротко, затем объясни основание и ограничение.</p>')
+        lang = r.get("language", "ru")
+        t = LABELS[lang]
+        body.append(f'<section class="role"><div class="kicker">{esc(r["account"])} · {esc(r["minutes"])} recommended speaking time</div>'
+                    f'<h2>{esc(r["name"])}</h2><p><b>Scope:</b> {esc(r["scope"])}</p>'
+                    f'<h3>{esc(t["know"])}</h3>{bullet_list(r["must_know"])}'
+                    f'<h3>{esc(t["show"])}</h3>{number_list(r["show"])}'
+                    f'<h3>{esc(t["script"])}</h3><div class="callout"><i lang="en">{esc(r["script_en"])}</i></div>'
+                    f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“{esc(r["handoff_en"])}”</span></p>'
+                    f'<h3>{esc(t["exercises"])}</h3>{number_list(r["exercises"])}'
+                    f'<h3>{esc(t["closing"])}</h3>{number_list(r["closing"])}'
+                    f'<h3>{esc(t["lookup"])}</h3>{path_table(r["lookup"], lang)}'
+                    f'<h3>{esc(t["avoid"])}</h3>{bullet_list(r["avoid"])}</section>')
+    body.append('<section class="break"><h2>Plain-language glossary</h2>'
+                '<p>Short, non-technical definitions of every term the examiner may use.</p>' + basics_table(d) + '</section>')
+    body.append('<section class="break"><h2>Examiner questions</h2>'
+                '<p>Answer out loud in one short sentence first, then give the evidence and the limitation.</p>')
     for q in d["questions"]:
-        who = "Все" if q["role"] == "all" else next((r["account"] for r in d["roles"] if r["id"] == q["role"]), "Команда")
-        body.append(f'<div class="question"><div class="tag">{esc(who)}</div><p><b lang="en">{esc(q["question"])}</b></p><p class="small" lang="ru">{esc(q["ru"])}</p><p class="answer" lang="en">{esc(q["answer"])}</p></div>')
-    body.append('</section><h2>Порядок 15-минутного выступления</h2><table><thead><tr><th>Slide</th><th>Owner</th><th>Time</th><th>What to show</th></tr></thead><tbody>')
+        who = "Everyone" if q["role"] == "all" else next((r["account"] for r in d["roles"] if r["id"] == q["role"]), "Team")
+        hint = f'<p class="small" lang="ru">{esc(q["ru"])}</p>' if q.get("ru") else ""
+        body.append(f'<div class="question"><div class="tag">{esc(who)}</div><p><b lang="en">{esc(q["question"])}</b></p>'
+                    f'{hint}<p class="answer" lang="en">{esc(q["answer"])}</p></div>')
+    body.append('</section><h2>The 15-minute running order</h2>'
+                '<table><thead><tr><th>Slide</th><th>Owner</th><th>Time</th><th>What to show</th></tr></thead><tbody>')
     clock = 0
-    for i, s in enumerate(d["slides"], 1):
-        start = f"{clock // 60:02d}:{clock % 60:02d}"; clock += s["seconds"]; end = f"{clock // 60:02d}:{clock % 60:02d}"
-        owner = next(r["account"] for r in d["roles"] if r["id"] == s["owner"])
-        body.append(f'<tr><td>{i}. {esc(s["title"])}</td><td>{esc(owner)}</td><td>{start}–{end}</td><td>{esc("; ".join(s["bullets"]))}</td></tr>')
-    body.append('</tbody></table><h2>Демо и готовность</h2>')
+    for i, s_ in enumerate(d["slides"], 1):
+        start_ = f"{clock // 60:02d}:{clock % 60:02d}"; clock += s_["seconds"]; end_ = f"{clock // 60:02d}:{clock % 60:02d}"
+        owner = next(r["account"] for r in d["roles"] if r["id"] == s_["owner"])
+        body.append(f'<tr><td>{i}. {esc(s_["title"])}</td><td>{esc(owner)}</td><td>{start_}–{end_}</td>'
+                    f'<td>{esc("; ".join(s_["bullets"]))}</td></tr>')
+    body.append('</tbody></table><h2>Demo and readiness</h2>')
     body.append('<table><thead><tr><th>Time</th><th>Action</th><th>Expected / fallback</th></tr></thead><tbody>')
     for item in d["demo"]:
-        body.append(f'<tr><td>{esc(item["time"])}</td><td>{esc(item["action"])}</td><td>{esc(item["expected"])}<br><span class="small">{esc(item["fallback"])}</span></td></tr>')
+        body.append(f'<tr><td>{esc(item["time"])}</td><td>{esc(item["action"])}</td>'
+                    f'<td>{esc(item["expected"])}<br><span class="small">{esc(item["fallback"])}</span></td></tr>')
     body.append('</tbody></table>')
-    body.append('<h3>До сдачи</h3>' + bullet_list([c["label"] for c in d["checklist"]]))
-    body.append(exam_day(d))
-    body.append('<h2>Проверенные факты и ограничения</h2><table><thead><tr><th>Measure</th><th>Value</th><th>Explanation</th></tr></thead><tbody>')
+    body.append('<h3>Before submission</h3>' + bullet_list([c["label"] for c in d["checklist"]]))
+    body.append(exam_day(d, "en"))
+    body.append('<h2>Checked facts and their limits</h2>'
+                '<table><thead><tr><th>Measure</th><th>Value</th><th>Explanation</th></tr></thead><tbody>')
     for m in d["metrics"]:
         body.append(f'<tr><td>{esc(m["label"])}</td><td>{esc(m["value"])}</td><td>{esc(m["note"])}</td></tr>')
-    body.append('</tbody></table><p>Первичный источник закреплён по версии, но лицензия не подтверждена. Это открытый пункт, который нельзя закрыть одной ссылкой на публичную загрузку.</p>')
-    return document("Team Defense Guide", "".join(body), "ru")
+    body.append('</tbody></table><p>The primary source is pinned to a revision, but its licence is not confirmed. '
+                'That is an open item, and a link to a public download does not close it.</p>')
+    return document("Team Defense Guide", "".join(body), "en")
 
 
 def role_doc(d: dict, r: dict) -> str:
-    body = [cover(esc(r["name"]), f"Personal study card · {esc(r['account'])} · {esc(r['minutes'])}",
+    """One personal exam guide. Neda's and Jacopo's tracks are written in
+    English with non-technical explanations; the other two stay in Russian."""
+    lang = r.get("language", "ru")
+    t = LABELS[lang]
+    body = [cover(esc(r["name"]), f"{t['card']} · {esc(r['account'])} · {esc(r['minutes'])}",
                   r["scope"], f"Calcio Champagne · Role track {r['id']} · Confirm personal work truthfully")]
-    body.append('<h2>Что нужно знать</h2>' + bullet_list(r["must_know"]))
-    body.append('<h2>Что показать</h2>' + number_list(r["show"]))
-    body.append('<h2>Короткая речь на английском</h2><div class="callout"><i>' + esc(r["script_en"]) + '</i></div>')
-    body.append('<p><b>Переход:</b> “' + esc(r["handoff_en"]) + '”</p>')
-    body.append('<h2>Твой тайминг на защите</h2>' + role_schedule(d, r["id"]))
-    body.append('<h2>Как закрывать экзамен</h2>' + number_list(r["closing"]))
-    body.append('<h2>Где смотреть в проекте</h2>' + path_table(r["lookup"]))
-    body.append('<h2>Практические задания</h2>' + number_list(r["exercises"]))
-    body.append('<h2>Вопросы по направлению</h2>')
-    qs = [q for q in d["questions"] if q["role"] in (r["id"], "all")]
-    for q in qs:
-        body.append(f'<div class="question"><p><b lang="en">{esc(q["question"])}</b></p><p class="small">{esc(q["ru"])}</p><p class="answer">{esc(q["answer"])}</p></div>')
-    body.append('<h2>Какие фразы не использовать</h2>' + bullet_list(r["avoid"]))
-    body.append(exam_day(d))
-    body.append('<div class="callout warning">Роль — учебная ответственность. Не заявляй личное авторство или самостоятельную проверку, если этого не было. Покажи ровно те изменения и команды, которые выполнял(а) лично.</div>')
-    return document(f"Role guide — {r['account']}", "".join(body), "ru")
+    body.append(f'<h2>{esc(t["know"])}</h2>' + bullet_list(r["must_know"]))
+    body.append(f'<h2>{esc(t["show"])}</h2>' + number_list(r["show"]))
+    body.append(f'<h2>{esc(t["script"])}</h2><div class="callout"><i lang="en">' + esc(r["script_en"]) + '</i></div>')
+    body.append(f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“' + esc(r["handoff_en"]) + '”</span></p>')
+    body.append(f'<h2>{esc(t["clock"])}</h2>' + role_schedule(d, r["id"], lang))
+    body.append(f'<h2>{esc(t["closing"])}</h2>' + number_list(r["closing"]))
+    body.append(f'<h2>{esc(t["lookup"])}</h2>' + path_table(r["lookup"], lang))
+    body.append(f'<h2>{esc(t["basics"])}</h2><p>{esc(t["basics_note"])}</p>' + basics_table(d))
+    body.append(f'<h2>{esc(t["exercises"])}</h2>' + number_list(r["exercises"]))
+    body.append(f'<h2>{esc(t["questions"])}</h2>')
+    for q in [q for q in d["questions"] if q["role"] in (r["id"], "all")]:
+        hint = f'<p class="small" lang="ru">{esc(q["ru"])}</p>' if q.get("ru") and lang == "ru" else ""
+        body.append(f'<div class="question"><p><b lang="en">{esc(q["question"])}</b></p>{hint}'
+                    f'<p class="answer" lang="en">{esc(q["answer"])}</p></div>')
+    body.append(f'<h2>{esc(t["avoid"])}</h2>' + bullet_list(r["avoid"]))
+    body.append(exam_day(d, lang))
+    body.append(f'<div class="callout warning">{esc(t["truthful"])}</div>')
+    return document(f"Role guide — {r['account']}", "".join(body), lang)
 
 
 def presentation(d: dict) -> str:
