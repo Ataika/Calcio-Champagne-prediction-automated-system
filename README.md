@@ -3,7 +3,8 @@
 An editorial football data journal: what do transfer budgets buy, and does
 attacking output track league results? **[Local app](http://localhost:8502)** ·
 [Architecture](docs/ARCHITECTURE.md) · [Audit](docs/AUDIT.md) ·
-[LUISS requirements](docs/COURSE_REQUIREMENTS.md) · [Presentation route](docs/DEFENSE.md)
+[LUISS requirements](docs/COURSE_REQUIREMENTS.md) · [Presentation route](docs/DEFENSE.md) ·
+[Licence decision](docs/LICENCE_DECISION.md) · [Fresh checkout](docs/FRESH_CHECKOUT.md)
 
 ## Question
 
