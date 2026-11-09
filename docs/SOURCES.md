@@ -18,7 +18,9 @@ LICENCE/LICENSE file. Publicly downloadable is not the same as openly licensed.
 The old “open licence” claim was removed. The course asks for a clear licence;
 upstream permission/licence confirmation or a clearly licensed replacement is
 still needed before claiming this aspect of course compliance. No redistribution
-of raw data is added to this repository.
+of raw data is added to this repository. The checks behind this statement were
+repeated on 9 November 2026 and are recorded, together with the three options
+that can close the requirement, in [licence decision](LICENCE_DECISION.md).
 
 ## The metadata-table difference
 
