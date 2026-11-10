@@ -1,51 +1,56 @@
 # Calcio Champagne — defense package
 
-Prepared 9 November 2026 for the LUISS CIDS project defense. The checkpoint is
-12 November (five-minute end-to-end demo) and the final defense is 20/26
-November (15 minutes plus five minutes of questions). Start with these items:
+Everything in this archive is offline. Nothing here needs the database, Docker
+or a network connection: open the files directly from the folder.
 
-1. `site/index.html` is the offline, interactive study site. It has role guides,
-   a pipeline walkthrough, measured evidence, a rehearsal timer and examiner
-   questions. Browser checkmarks remain in local browser storage.
-2. `site/downloads/Project-Report.pdf` is the English technical report.
-3. `site/downloads/Team-Defense-Guide.pdf` is the Russian team study guide with
-   English rehearsal scripts and Q&A.
-4. `site/downloads/Presentation.pdf` is a ten-slide, 15-minute deck.
-5. `site/downloads/Role-*.pdf` are the four personal exam guides. Each one has
-   what to know, what to show, the speaker's own slots on the 15-minute clock,
-   how to close the exam, a map of the exact project files behind that role,
-   the examiner questions for it, and the shared exam-day section: dates,
-   machine preparation, how to answer, and direct answers to the four
-   uncomfortable questions (licence, contributors, second laptop, xG).
+**The checkpoint is 12 November (a five-minute end-to-end demo). The final
+defense is 20 or 26 November: 15 minutes plus five minutes of questions.**
 
-## Run the presentation site
+## Open your own guide first
 
-Open `site/index.html` in a browser. For the interactive deck, open
-`site/presentation.html`. Arrow keys move between slides; `N` reveals speaker
-notes, `F` requests fullscreen. The separate study site can run offline and
-does not need project data or a database.
+| You | Your guide | Your slot | You answer for | You hand over |
+| --- | --- | --- | --- | --- |
+| Neda | `Role-neda.pdf` | 00:00–03:45, slides 1–3 | where the data comes from, why a database, the licence | timings and memory → Atai · model quality → Gabriele |
+| Gabriele | `Role-lill.pdf` | 03:45–06:30 and 09:15–10:15, slides 4, 5, 7 | the index, what the model predicts, how it is tested | timings and memory → Atai · data loading → Neda |
+| Jacopo | `Role-jacopo.pdf` | 06:30–09:15 and 14:00–15:00, slides 6, 10 | the live demo, what the page shows, the API answers | timings and memory → Atai · model quality → Gabriele |
+| Atai | `Role-atai.pdf` | 10:15–14:00, slides 8, 9 | startup, reproducibility, time, memory, disk, growth | model internals → Gabriele · sources → Neda |
 
-## Run the project
+Each guide is about ten pages: what to know, what to show, **three pictures of
+your own part**, your exact slots on the clock, how to close the exam, a map of
+the project files behind your part, the examiner questions for you, phrasings
+to avoid, and the shared exam-day section.
 
-The complete software is in the sibling project root. Follow its README and
-copy `.env.example` to `.env` before starting Compose. A fresh setup downloads
-the pinned primary CSV sources through the project loader. The archive excludes
-`.env`, credentials, raw datasets, model weights and built Docker images. Match
-enrichment is optional and is not redistributed in this package.
+Guides for Neda, Gabriele and Jacopo are in English and explain every technical
+term in plain words. Atai's guide is in Russian. The content is the same.
 
-## Data and metric note
+**Nobody except Atai quotes a performance number out loud.** Startup time,
+memory, the index speed-up and the data-growth experiment are his part. If one
+of those comes up in your section, hand it over in one sentence — that is a
+correct answer, not an evasion.
 
-League comparison shows completed-match goals for, goals against, goal
-difference, and per-match attack/defense ranks within each league-season. xG
-does not exist in the loaded match schema and is not estimated. In Serie A
-24/25, Inter recorded 79/35/+44 (attack rank 1, defense rank 2); Milan
-61/43/+18 (ranks 3 and 7). Head-to-head totals remain a separate view of their
-two direct meetings.
+## Everything else in the archive
 
-## Evidence and open items
+| File | What it is |
+| --- | --- |
+| `site/index.html` | the interactive study site: roles, the system, the evidence, a rehearsal timer and 39 examiner questions with answers |
+| `site/presentation.html` | the live deck — arrow keys move, `N` shows speaker notes, `F` is fullscreen, with a 15-minute timer |
+| `site/downloads/Project-Report.pdf` | the 26-page project report, including three architecture diagrams |
+| `site/downloads/Team-Defense-Guide.pdf` | the full team guide: every track, all nine pictures, all questions, the running order |
+| `site/downloads/Presentation.pdf` | the ten slides as a printable PDF |
+| `materials/*.html` | the same documents as web pages, if you prefer reading in a browser |
+| `curriculum.json` | the single source all of the above is generated from |
 
-The PDF/site reflect checked local data and the dated measurements in
-`../docs/MEASUREMENTS.md`. The primary upstream dataset's explicit reuse licence
-is still unconfirmed; the report does not call it open-licensed. Role cards
-organize study and speaking time but do not independently establish who wrote
-or validated a change. Each participant should describe their real work.
+## Before you present
+
+Read your own guide end to end once, then the examiner questions for your part,
+then two questions from somebody else's part. Say the answers out loud: reading
+them silently is not rehearsal.
+
+## What the project claims, and what it does not
+
+The system is reproducible on the measured setup. Transfer spending has almost
+no linear relationship with the next season's change in attacking output, and
+the model improves only modestly on predicting no change at all. Every result
+is an association in historical records, never a cause. There is no xG in the
+data and we do not invent it. The primary data source has no confirmed licence,
+and we say so rather than calling it open.
