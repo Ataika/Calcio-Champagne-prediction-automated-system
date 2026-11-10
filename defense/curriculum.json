@@ -200,7 +200,7 @@
         "Which exact copy of the data we use. loader/sources.json pins one revision of the upstream repository — a revision is a specific saved version, like a dated edition of a report — and stores a SHA-256 checksum for every file. A checksum is a fingerprint of the file's contents: change one character and the fingerprint changes. That is how we prove we loaded the data we documented.",
         "One row of our analysis is one club, in one season, in one competition. The club's name is only a label. Two spellings of the same club must never become two clubs, so every join uses the numeric club ID, not the name.",
         "Why a relational (SQL) database: our eleven files have fixed columns, and we constantly combine players with clubs, seasons and competitions. That combining is called a join, and relational databases are built for it. A document database would store the same facts but make these joins harder, not easier.",
-        "What COPY does: it is PostgreSQL's bulk-loading command. It streams a whole file into a table instead of sending one INSERT statement per row, which is why 5,743,186 rows load in about ten seconds.",
+        "What COPY does: it is PostgreSQL's bulk-loading command. It streams a whole file into a table instead of sending one INSERT statement per row, so the whole import is one streaming operation instead of millions of separate statements.",
         "Why we build indices after loading, not before. An index works like the index at the back of a book: it makes lookups fast, but it must be updated for every row inserted. Building it once after the import is faster than maintaining it during the import. ANALYZE then refreshes the statistics the database uses to pick a query plan.",
         "The match files from football-data.co.uk are optional. Without them the system still runs and the interface states that coverage is missing instead of showing zeros. Club names in those files are mapped to our IDs, identical fixtures load once, and contradictory scores stop the replacement before stored matches change.",
         "The licence of the primary source is not confirmed. We checked: there is no licence file at the pinned revision. Being publicly downloadable is not permission to reuse. Say this plainly — it is a known open item, not a mistake to hide.",
@@ -273,10 +273,11 @@
       "language": "en",
       "not_yours": [
         "Infrastructure numbers are not yours. Startup time, memory, the index speed-up and the growth experiment belong to Atai. Hand them over in one sentence: “Atai ran those measurements — Atai, would you take this one?”",
-        "Model quality is not yours either. R², MAE, the holdout and the baseline belong to Lilia. You can say what the index measures; how well the model predicts it is her part.",
+        "Model quality is not yours either. R², MAE, the holdout and the baseline belong to Gabriele. You can say what the index measures; how well the model predicts it is her part.",
         "If you are asked for a number that is not in this guide, say where it is written instead of guessing: docs/SOURCES.md for the data, docs/findings.md for results, docs/MEASUREMENTS.md for timings.",
         "Handing a question to the right person is a correct answer, not an evasion. Guessing a number you cannot defend is the only real mistake available here."
-      ]
+      ],
+      "person": "Neda"
     },
     {
       "id": "lill",
@@ -365,68 +366,13 @@
         "Use “accompanies” and “is associated with” for every relationship. The word “causes” is more expensive on your part than anywhere else.",
         "On xG, answer briefly: the provider field does not exist, we show real shots, and the shots-on-target estimate is an experimental proxy."
       ],
-      "language": "ru",
-      "ru": {
-        "must_know": [
-          "Формула Champagne Index; почему goal + assist может учитывать одно взятие ворот дважды и не является xG.",
-          "Target = индекс следующего последовательного сезона минус текущий; минимум 30 матчей для топ-5 лиг и 5 для прочих соревнований.",
-          "Пять признаков: текущий индекс, общие расходы, расходы на атаку, средний возраст, изменение средней рыночной стоимости.",
-          "Как устраняется неверный лаг: уникальный клуб-сезон, точный предыдущий год, затем присоединение соревнований.",
-          "Хронологический holdout: ранние сезоны обучают, поздние тестируют; baseline предсказывает нулевое изменение.",
-          "R² = 0.127 не означает 87% или 12.7% точности. MAE 0.4856 против 0.5114 показывает небольшое улучшение.",
-          "Lab использует отдельную модель на всех допустимых данных и не доказывает причинный эффект изменения бюджета.",
-          "The season comparison also shows score-derived goals for/against/difference and per-match attack/defense ranks. These are separate from the Transfermarkt-based Champagne Index.",
-          "The defensive-spend follow-up correlates defender fees with next-season change in goalkeeper-source goals conceded per match: r=0.0040, p=0.427, n=38,531; no useful linear signal."
-        ],
-        "show": [
-          "Показать текущие r, p, n и MAE на странице Project; назвать единицы и выборку каждого показателя.",
-          "Объяснить, почему 23/24 → 25/26 не является корректной парой, даже если shift(-1) её возвращает.",
-          "Поменять один ввод в Lab, вернуть baseline и объяснить, что измеряется сравнением сценариев."
-        ],
-        "exercises": [
-          "Рассчитай (76 + 70) / 38 и объясни, почему ответ 3.84 не равен голам за матч.",
-          "Посчитай (0.511364 − 0.485593) / 0.511364 ≈ 5.04% и назови правильную интерпретацию.",
-          "Различи три вопроса: корреляция в текущем сезоне, изменение в следующем сезоне и причинный эффект покупки игрока."
-        ],
-        "closing": [
-          "Твои слайды 4 и 5 (03:45–06:30) и слайд 7 (09:15–10:15). Между ними 165 секунд демо у Джакоппо — следи за таймером, чтобы не потерять свой слайд findings.",
-          "Сначала определи наблюдение, потом показывай модель: клуб × сезон × соревнование, затем target как разницу с следующим последовательным сезоном.",
-          "Главное число произноси как сравнение, а не как достижение: MAE 0.4856 против baseline 0.5114 — улучшение около 5%.",
-          "Сразу объясни, что R² = 0.127 не доля правильных прогнозов. Это самый вероятный вопрос по твоей части.",
-          "Если спросят про Lab: отдельная модель на всех данных для исследования, её собственная подгонка не является независимым тестом.",
-          "Про любую связь говори «accompanies», «is associated with». Слово «causes» на твоей части стоит дороже всего.",
-          "Про xG отвечай коротко: поля провайдера нет, есть реальные удары и экспериментальный прокси по ударам в створ."
-        ],
-        "avoid": [
-          "Модель доказывает, что увеличение бюджета улучшит игру.",
-          "R² — доля правильных прогнозов.",
-          "Оценка отдельной holdout-модели является результатом тестирования all-data модели Lab."
-        ],
-        "name": "Аналитика и модель",
-        "scope": "Индекс → признаки → target → baseline → ограничения",
-        "lookup_why": {
-          "pipeline/compute_predictions.py": "Target, пять признаков, лаг рыночной стоимости, хронологический holdout и baseline нулевого изменения — всё в одном файле.",
-          "docs/LAB.md": "Протокол модели и отличие Lab-модели (все данные) от оценочной модели (ранние сезоны → поздние).",
-          "docs/findings.md": "Актуальные r, p, n, R² и MAE. Называй числа отсюда, а не по памяти.",
-          "docs/GLOSSARY.md": "Определения Champagne Index, Discipline Index, рангов и граница xG.",
-          "pipeline/feature_correlations.py": "Матрица корреляций признаков и флаг коллинеарности |r| > порога.",
-          "pipeline/shap_analysis.py": "mean |SHAP| на том же held-out сплите, что и R² — ответ на «почему не in-sample».",
-          "pipeline/power_ratings.py": "Poisson attack/defense с общим home advantage; в коде прямо написано, что оценка in-sample.",
-          "pipeline/proxy_xg.py": "Прокси по ударам в створ и finishing/defensive luck — почему это не xG.",
-          "pipeline/discipline_effect.py": "Связь красных карточек с пропущенными: +0.341 гола за матч, 1 619 против 16 195 наблюдений.",
-          "tests/test_regressions.py": "Зафиксированные известные дефекты модели и расчётов, чтобы они не вернулись."
-        },
-        "not_yours": [
-          "Инфраструктурные числа не твои: время старта, память, ускорение по индексу и эксперимент роста — часть Атая. Передавай одной фразой.",
-          "Происхождение данных, загрузка и схема — часть Неды. Ты начинаешь с того, что уже лежит в таблицах.",
-          "Если спрашивают число, которого нет в карточке, называй файл, а не версию по памяти: docs/findings.md и docs/LAB.md."
-        ]
-      },
+      "language": "en",
       "not_yours": [
         "Infrastructure numbers are not yours: startup time, memory, the index speed-up and the growth experiment are Atai's part. Hand them over in one sentence.",
         "Data provenance, acquisition and the schema are Neda's part. You start from what is already in the tables.",
         "If asked for a number that is not in this guide, name the file rather than a remembered value: docs/findings.md and docs/LAB.md."
-      ]
+      ],
+      "person": "Gabriele"
     },
     {
       "id": "jacopo",
@@ -514,10 +460,11 @@
       "language": "en",
       "not_yours": [
         "Infrastructure numbers are not yours. Startup time, memory, the index speed-up and the growth experiment belong to Atai — hand them over in one sentence.",
-        "Model quality is not yours either. R², MAE, the holdout and the baseline belong to Lilia. You own what appears on the screen and how the API behaves.",
+        "Model quality is not yours either. R², MAE, the holdout and the baseline belong to Gabriele. You own what appears on the screen and how the API behaves.",
         "A safe and accurate answer when a number comes up during your demo: “the page shows what the API prepared; the measurement behind it is Atai's part.” Then continue the demo.",
         "If you are asked for a number that is not in this guide, say where it is written instead of guessing: docs/findings.md for results, docs/MEASUREMENTS.md for timings."
-      ]
+      ],
+      "person": "Jacopo"
     },
     {
       "id": "atai",
@@ -660,10 +607,11 @@
         ]
       },
       "not_yours": [
-        "The inside of the model is not yours: the target, the features, R², MAE and the holdout are Lill's part. You answer for the system starting reproducibly and for what it costs in resources.",
+        "The inside of the model is not yours: the target, the features, R², MAE and the holdout are Gabriele's part. You answer for the system starting reproducibly and for what it costs in resources.",
         "Sources and the schema are Neda's part; how the application behaves is Jacopo's.",
         "You are the only person who quotes the performance numbers out loud. If one is asked of someone else, take the question back in one sentence."
-      ]
+      ],
+      "person": "Atai"
     }
   ],
   "questions": [

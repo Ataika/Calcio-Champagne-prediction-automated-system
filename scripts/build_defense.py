@@ -10,6 +10,7 @@ import json
 import shutil
 from pathlib import Path
 from build_final_report import main as build_final_report
+from role_figures import FIGURES, FIG_STYLE
 
 ROOT = Path(__file__).resolve().parents[1]
 CURRICULUM = ROOT / "defense/curriculum.json"
@@ -67,7 +68,7 @@ th { background:#eceee5; font: bold 8pt Arial; }
 .slides-doc h1 { font-size:34pt; }
 .slides-doc ul { font-size:17pt; line-height:1.55; }
 @media print { a { color:inherit; text-decoration:none; } .break { break-before:page; } }
-</style>"""
+</style>""" + FIG_STYLE
 
 
 LABELS = {
@@ -76,7 +77,7 @@ LABELS = {
         "handoff": "Hand over", "clock": "Your slots on the clock", "closing": "How to close the exam",
         "lookup": "Where to look in the project", "exercises": "Practice", "questions": "Questions for your part",
         "avoid": "Phrasing to avoid", "basics": "Plain-language glossary",
-        "not_yours": "Not your part — hand it over",
+        "not_yours": "Not your part — hand it over", "figures": "Your part in pictures",
         "card": "Personal exam guide", "truthful": "A role is a study responsibility. Do not claim authorship or"
         " a verification you did not perform. Show exactly the changes and commands you ran yourself.",
         "basics_note": "These definitions are deliberately non-technical. Use them to explain the system to"
@@ -87,7 +88,7 @@ LABELS = {
         "handoff": "Переход", "clock": "Твой тайминг на защите", "closing": "Как закрывать экзамен",
         "lookup": "Где смотреть в проекте", "exercises": "Практические задания", "questions": "Вопросы по направлению",
         "avoid": "Какие фразы не использовать", "basics": "Словарь простыми словами",
-        "not_yours": "Не твоя часть — передай вопрос",
+        "not_yours": "Не твоя часть — передай вопрос", "figures": "Твоя часть на схемах",
         "card": "Персональная карточка защиты", "truthful": "Роль — учебная ответственность. Не заявляй личное"
         " авторство или самостоятельную проверку, если этого не было. Покажи ровно те изменения и команды,"
         " которые выполнял(а) лично.",
@@ -240,6 +241,7 @@ def guide(d: dict) -> str:
                     f'<h2>{esc(r["name"])}</h2><p><b>Scope:</b> {esc(r["scope"])}</p>'
                     f'<h3>{esc(t["know"])}</h3>{bullet_list(r["must_know"])}'
                     f'<h3>{esc(t["show"])}</h3>{number_list(r["show"])}'
+                    f'{figures_block(r["id"], "en")}'
                     f'<h3>{esc(t["script"])}</h3><div class="callout"><i lang="en">{esc(r["script_en"])}</i></div>'
                     f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“{esc(r["handoff_en"])}”</span></p>'
                     f'<h3>{esc(t["exercises"])}</h3>{number_list(r["exercises"])}'
@@ -282,6 +284,22 @@ def guide(d: dict) -> str:
     return document("Team Defense Guide", "".join(body), "en")
 
 
+def figures_block(role_id: str, language: str) -> str:
+    """The speaker's own part drawn as simple pictures: no measured values,
+    one caption explaining how to read it and one sentence they can say."""
+    figs = FIGURES.get(role_id)
+    if not figs:
+        return ""
+    how = ("How to read it" if language == "en" else "Как читать")
+    say = ("Say it like this" if language == "en" else "Так это можно сказать")
+    out = []
+    for title, draw, caption, sentence in figs:
+        out.append(f'<div class="figwrap"><h3>{esc(title)}</h3>'
+                   f'<p class="figcap"><b>{how}.</b> {esc(caption)}</p>{draw()}'
+                   f'<p class="figsay"><b>{say}:</b> {esc(sentence)}</p></div>')
+    return "".join(out)
+
+
 def personal(r: dict, field: str):
     """Content for one speaker's own card. Russian tracks keep their wording in
     r["ru"]; shared documents always read the English fields above it."""
@@ -301,6 +319,9 @@ def role_doc(d: dict, r: dict) -> str:
                   scope, f"Calcio Champagne · Role track {r['id']} · Confirm personal work truthfully")]
     body.append(f'<h2>{esc(t["know"])}</h2>' + bullet_list(r["must_know"]))
     body.append(f'<h2>{esc(t["show"])}</h2>' + number_list(r["show"]))
+    figures = figures_block(r["id"], lang)
+    if figures:
+        body.append(f'<h2>{esc(t["figures"])}</h2>' + figures)
     body.append(f'<h2>{esc(t["script"])}</h2><div class="callout"><i lang="en">' + esc(r["script_en"]) + '</i></div>')
     body.append(f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“' + esc(r["handoff_en"]) + '”</span></p>')
     body.append(f'<h2>{esc(t["clock"])}</h2>' + role_schedule(d, r["id"], lang))
