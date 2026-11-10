@@ -307,7 +307,7 @@ def role_doc(d: dict, r: dict) -> str:
     body.append(f'<h2>{esc(t["closing"])}</h2>' + number_list(r["closing"]))
     lookup = [{"path": x["path"], "why": r["ru"]["lookup_why"].get(x["path"], x["why"])} for x in r["lookup"]] \
         if lang == "ru" and "ru" in r else r["lookup"]
-    body.append(f'<h2>{esc(t["not_yours"])}</h2>' + number_list(r["not_yours"]))
+    body.append(f'<h2>{esc(t["not_yours"])}</h2>' + number_list(personal(r, "not_yours")))
     body.append(f'<h2>{esc(t["lookup"])}</h2>' + path_table(lookup, lang))
     body.append(f'<h2>{esc(t["basics"])}</h2><p>{esc(t["basics_note"])}</p>' + basics_table(d))
     body.append(f'<h2>{esc(t["exercises"])}</h2>' + number_list(r["exercises"]))

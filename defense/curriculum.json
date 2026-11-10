@@ -415,12 +415,17 @@
           "pipeline/proxy_xg.py": "Прокси по ударам в створ и finishing/defensive luck — почему это не xG.",
           "pipeline/discipline_effect.py": "Связь красных карточек с пропущенными: +0.341 гола за матч, 1 619 против 16 195 наблюдений.",
           "tests/test_regressions.py": "Зафиксированные известные дефекты модели и расчётов, чтобы они не вернулись."
-        }
+        },
+        "not_yours": [
+          "Инфраструктурные числа не твои: время старта, память, ускорение по индексу и эксперимент роста — часть Атая. Передавай одной фразой.",
+          "Происхождение данных, загрузка и схема — часть Неды. Ты начинаешь с того, что уже лежит в таблицах.",
+          "Если спрашивают число, которого нет в карточке, называй файл, а не версию по памяти: docs/findings.md и docs/LAB.md."
+        ]
       },
       "not_yours": [
-        "Инфраструктурные числа не твои: время старта, память, ускорение по индексу и эксперимент роста — часть Атая. Передавай одной фразой.",
-        "Происхождение данных, загрузка и схема — часть Неды. Ты начинаешь с того, что уже лежит в таблицах.",
-        "Если спрашивают число, которого нет в карточке, называй файл, а не версию по памяти: docs/findings.md и docs/LAB.md."
+        "Infrastructure numbers are not yours: startup time, memory, the index speed-up and the growth experiment are Atai's part. Hand them over in one sentence.",
+        "Data provenance, acquisition and the schema are Neda's part. You start from what is already in the tables.",
+        "If asked for a number that is not in this guide, name the file rather than a remembered value: docs/findings.md and docs/LAB.md."
       ]
     },
     {
@@ -647,12 +652,17 @@
           "docs/AUDIT.md": "Найденные и исправленные дефекты: ответ на вопрос «как вы убедились, что это работает».",
           "docs/WORK_PACKAGES.md": "Пакеты работ, приёмочные условия и честный список незакрытых внешних пунктов.",
           "scripts/build_defense.py": "Сборка этого пособия: слайды, роли, PDF и проверка, что выступление ровно 900 секунд."
-        }
+        },
+        "not_yours": [
+          "Внутренности модели не твои: target, признаки, R², MAE и holdout — часть Лилии. Ты отвечаешь за то, что система воспроизводимо запускается и сколько она стоит по ресурсам.",
+          "Источники и схема — часть Неды, поведение приложения — часть Джакоппо.",
+          "Ты единственный, кто называет числа производительности. Если их спрашивают у других, забирай вопрос себе одной фразой."
+        ]
       },
       "not_yours": [
-        "Внутренности модели не твои: target, признаки, R², MAE и holdout — часть Лилии. Ты отвечаешь за то, что система воспроизводимо запускается и сколько она стоит по ресурсам.",
-        "Источники и схема — часть Неды, поведение приложения — часть Джакоппо.",
-        "Ты единственный, кто называет числа производительности. Если их спрашивают у других, забирай вопрос себе одной фразой."
+        "The inside of the model is not yours: the target, the features, R², MAE and the holdout are Lill's part. You answer for the system starting reproducibly and for what it costs in resources.",
+        "Sources and the schema are Neda's part; how the application behaves is Jacopo's.",
+        "You are the only person who quotes the performance numbers out loud. If one is asked of someone else, take the question back in one sentence."
       ]
     }
   ],
