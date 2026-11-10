@@ -118,7 +118,7 @@ def role_schedule(d: dict, role_id: str, language: str = "en") -> str:
             continue
         rows.append(f'<tr><td>{i}. {esc(s["title"])}</td><td>{esc(s["kicker"])}</td>'
                     f'<td>{start // 60:02d}:{start % 60:02d}–{clock // 60:02d}:{clock % 60:02d}</td>'
-                    f'<td>{s["seconds"]} с</td></tr>')
+                    f'<td>{s["seconds"]} {"s" if language == "en" else "с"}</td></tr>')
     head = (("Slide", "Block", "Time", "Length") if language == "en"
             else ("Слайд", "Блок", "Время", "Длительность"))
     return (f'<table><thead><tr><th>{esc(head[0])}</th><th>{esc(head[1])}</th><th>{esc(head[2])}</th>'
