@@ -76,6 +76,7 @@ LABELS = {
         "handoff": "Hand over", "clock": "Your slots on the clock", "closing": "How to close the exam",
         "lookup": "Where to look in the project", "exercises": "Practice", "questions": "Questions for your part",
         "avoid": "Phrasing to avoid", "basics": "Plain-language glossary",
+        "not_yours": "Not your part — hand it over",
         "card": "Personal exam guide", "truthful": "A role is a study responsibility. Do not claim authorship or"
         " a verification you did not perform. Show exactly the changes and commands you ran yourself.",
         "basics_note": "These definitions are deliberately non-technical. Use them to explain the system to"
@@ -86,6 +87,7 @@ LABELS = {
         "handoff": "Переход", "clock": "Твой тайминг на защите", "closing": "Как закрывать экзамен",
         "lookup": "Где смотреть в проекте", "exercises": "Практические задания", "questions": "Вопросы по направлению",
         "avoid": "Какие фразы не использовать", "basics": "Словарь простыми словами",
+        "not_yours": "Не твоя часть — передай вопрос",
         "card": "Персональная карточка защиты", "truthful": "Роль — учебная ответственность. Не заявляй личное"
         " авторство или самостоятельную проверку, если этого не было. Покажи ровно те изменения и команды,"
         " которые выполнял(а) лично.",
@@ -232,8 +234,8 @@ def guide(d: dict) -> str:
     body.append('<div class="callout warning"><b>The split in this guide is a study and speaking plan.</b> '
                 'It does not establish who wrote a given line of code. At the defense, describe the actual work you can show.</div>')
     for r in d["roles"]:
-        lang = r.get("language", "ru")
-        t = LABELS[lang]
+        # headings stay English here: the guide is read by the whole team
+        t = LABELS["en"]
         body.append(f'<section class="role"><div class="kicker">{esc(r["account"])} · {esc(r["minutes"])} recommended speaking time</div>'
                     f'<h2>{esc(r["name"])}</h2><p><b>Scope:</b> {esc(r["scope"])}</p>'
                     f'<h3>{esc(t["know"])}</h3>{bullet_list(r["must_know"])}'
@@ -242,7 +244,8 @@ def guide(d: dict) -> str:
                     f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“{esc(r["handoff_en"])}”</span></p>'
                     f'<h3>{esc(t["exercises"])}</h3>{number_list(r["exercises"])}'
                     f'<h3>{esc(t["closing"])}</h3>{number_list(r["closing"])}'
-                    f'<h3>{esc(t["lookup"])}</h3>{path_table(r["lookup"], lang)}'
+                    f'<h3>{esc(t["not_yours"])}</h3>{number_list(r["not_yours"])}'
+                    f'<h3>{esc(t["lookup"])}</h3>{path_table(r["lookup"], "en")}'
                     f'<h3>{esc(t["avoid"])}</h3>{bullet_list(r["avoid"])}</section>')
     body.append('<section class="break"><h2>Plain-language glossary</h2>'
                 '<p>Short, non-technical definitions of every term the examiner may use.</p>' + basics_table(d) + '</section>')
@@ -250,9 +253,8 @@ def guide(d: dict) -> str:
                 '<p>Answer out loud in one short sentence first, then give the evidence and the limitation.</p>')
     for q in d["questions"]:
         who = "Everyone" if q["role"] == "all" else next((r["account"] for r in d["roles"] if r["id"] == q["role"]), "Team")
-        hint = f'<p class="small" lang="ru">{esc(q["ru"])}</p>' if q.get("ru") else ""
         body.append(f'<div class="question"><div class="tag">{esc(who)}</div><p><b lang="en">{esc(q["question"])}</b></p>'
-                    f'{hint}<p class="answer" lang="en">{esc(q["answer"])}</p></div>')
+                    f'<p class="answer" lang="en">{esc(q["answer"])}</p></div>')
     body.append('</section><h2>The 15-minute running order</h2>'
                 '<table><thead><tr><th>Slide</th><th>Owner</th><th>Time</th><th>What to show</th></tr></thead><tbody>')
     clock = 0
@@ -269,13 +271,23 @@ def guide(d: dict) -> str:
     body.append('</tbody></table>')
     body.append('<h3>Before submission</h3>' + bullet_list([c["label"] for c in d["checklist"]]))
     body.append(exam_day(d, "en"))
-    body.append('<h2>Checked facts and their limits</h2>'
-                '<table><thead><tr><th>Measure</th><th>Value</th><th>Explanation</th></tr></thead><tbody>')
+    body.append('<h2>Checked facts, their limits and who answers for them</h2>'
+                '<p>Only the person named here quotes the number out loud. Anyone else hands the question over.</p>'
+                '<table><thead><tr><th>Measure</th><th>Value</th><th>Answered by</th><th>Explanation</th></tr></thead><tbody>')
     for m in d["metrics"]:
-        body.append(f'<tr><td>{esc(m["label"])}</td><td>{esc(m["value"])}</td><td>{esc(m["note"])}</td></tr>')
+        body.append(f'<tr><td>{esc(m["label"])}</td><td>{esc(m["value"])}</td>'
+                    f'<td>{esc(m.get("owner_account", "team"))}</td><td>{esc(m["note"])}</td></tr>')
     body.append('</tbody></table><p>The primary source is pinned to a revision, but its licence is not confirmed. '
                 'That is an open item, and a link to a public download does not close it.</p>')
     return document("Team Defense Guide", "".join(body), "en")
+
+
+def personal(r: dict, field: str):
+    """Content for one speaker's own card. Russian tracks keep their wording in
+    r["ru"]; shared documents always read the English fields above it."""
+    if r.get("language", "ru") == "ru" and field in r.get("ru", {}):
+        return r["ru"][field]
+    return r[field]
 
 
 def role_doc(d: dict, r: dict) -> str:
@@ -283,15 +295,20 @@ def role_doc(d: dict, r: dict) -> str:
     English with non-technical explanations; the other two stay in Russian."""
     lang = r.get("language", "ru")
     t = LABELS[lang]
-    body = [cover(esc(r["name"]), f"{t['card']} · {esc(r['account'])} · {esc(r['minutes'])}",
-                  r["scope"], f"Calcio Champagne · Role track {r['id']} · Confirm personal work truthfully")]
+    name = r["ru"]["name"] if lang == "ru" and "ru" in r else r["name"]
+    scope = r["ru"]["scope"] if lang == "ru" and "ru" in r else r["scope"]
+    body = [cover(esc(name), f"{t['card']} · {esc(r['account'])} · {esc(r['minutes'])}",
+                  scope, f"Calcio Champagne · Role track {r['id']} · Confirm personal work truthfully")]
     body.append(f'<h2>{esc(t["know"])}</h2>' + bullet_list(r["must_know"]))
     body.append(f'<h2>{esc(t["show"])}</h2>' + number_list(r["show"]))
     body.append(f'<h2>{esc(t["script"])}</h2><div class="callout"><i lang="en">' + esc(r["script_en"]) + '</i></div>')
     body.append(f'<p><b>{esc(t["handoff"])}:</b> <span lang="en">“' + esc(r["handoff_en"]) + '”</span></p>')
     body.append(f'<h2>{esc(t["clock"])}</h2>' + role_schedule(d, r["id"], lang))
     body.append(f'<h2>{esc(t["closing"])}</h2>' + number_list(r["closing"]))
-    body.append(f'<h2>{esc(t["lookup"])}</h2>' + path_table(r["lookup"], lang))
+    lookup = [{"path": x["path"], "why": r["ru"]["lookup_why"].get(x["path"], x["why"])} for x in r["lookup"]] \
+        if lang == "ru" and "ru" in r else r["lookup"]
+    body.append(f'<h2>{esc(t["not_yours"])}</h2>' + number_list(r["not_yours"]))
+    body.append(f'<h2>{esc(t["lookup"])}</h2>' + path_table(lookup, lang))
     body.append(f'<h2>{esc(t["basics"])}</h2><p>{esc(t["basics_note"])}</p>' + basics_table(d))
     body.append(f'<h2>{esc(t["exercises"])}</h2>' + number_list(r["exercises"]))
     body.append(f'<h2>{esc(t["questions"])}</h2>')
@@ -312,7 +329,7 @@ def presentation(d: dict) -> str:
     for i, s in enumerate(d["slides"], 1):
         start = f"{elapsed // 60:02d}:{elapsed % 60:02d}"; elapsed += s["seconds"]; end = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
         owner = next(r["account"] for r in d["roles"] if r["id"] == s["owner"])
-        slides.append(f'<section class="slide" data-seconds="{s["seconds"]}"><div class="kicker">{esc(s["kicker"])} · {start}–{end} · {esc(owner)}</div><h1>{esc(s["title"])}</h1>{bullet_list(s["bullets"])}<aside class="speaker-notes" hidden><b>Заметки выступающего / RU</b><p>{esc(s["notes"])}</p></aside><footer><span>CALCIO CHAMPAGNE · DEFENSE ACADEMY</span><span>{i:02d} / {len(d["slides"]):02d}</span></footer></section>')
+        slides.append(f'<section class="slide" data-seconds="{s["seconds"]}"><div class="kicker">{esc(s["kicker"])} · {start}–{end} · {esc(owner)}</div><h1>{esc(s["title"])}</h1>{bullet_list(s["bullets"])}<aside class="speaker-notes" hidden><b>Speaker notes</b><p>{esc(s["notes"])}</p></aside><footer><span>CALCIO CHAMPAGNE · DEFENSE ACADEMY</span><span>{i:02d} / {len(d["slides"]):02d}</span></footer></section>')
     body = f'''<div id="deck">{"".join(slides)}</div><div id="controls"><button id="prev" aria-label="Previous slide">←</button><span id="counter">1 / {len(d['slides'])}</span><button id="next" aria-label="Next slide">→</button><button id="notes">Notes · N</button><button id="full">Fullscreen · F</button><span id="clock">15:00</span></div>
 <script>
 const cards=[...document.querySelectorAll('.slide')];let current=0,started=null,elapsed=0;const $=s=>document.querySelector(s);function show(n){{current=(n+cards.length)%cards.length;const notes=document.body.classList.contains('show-notes');cards.forEach((s,i)=>{{s.classList.toggle('active',i===current);s.querySelector('.speaker-notes').hidden=!(notes&&i===current);}});$('#counter').textContent=`${{current+1}} / ${{cards.length}}`;}}function toggleNotes(){{const active=!document.body.classList.contains('show-notes');document.body.classList.toggle('show-notes',active);cards.forEach((s,i)=>s.querySelector('.speaker-notes').hidden=!(active&&i===current));}}
