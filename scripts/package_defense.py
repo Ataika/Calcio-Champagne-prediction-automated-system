@@ -26,6 +26,10 @@ def tracked_paths() -> list[Path]:
 
 def safe(path: Path) -> bool:
     rel = path.relative_to(ROOT)
+    # Finder and editor droppings: never useful to a reader, and .DS_Store
+    # leaks local folder metadata.
+    if rel.name == ".DS_Store" or rel.name.startswith("._"):
+        return False
     if any(part in OMIT_PARTS for part in rel.parts):
         return False
     if rel.name in FORBIDDEN or rel.name in OMIT_ZIPS:
@@ -66,7 +70,8 @@ def main() -> None:
     for base, arcroot in ((ROOT / "defense/site", "Calcio-Champagne-Defense/site"),
                           (ROOT / "defense/materials", "Calcio-Champagne-Defense/materials")):
         for p in base.rglob("*"):
-            if p.is_file() and p.name not in OMIT_ZIPS:
+            # safe() here too: this walk does not go through tracked_paths()
+            if p.is_file() and p.name not in OMIT_ZIPS and safe(p):
                 included.append((p, f"{arcroot}/{p.relative_to(base).as_posix()}"))
     defense = DOWNLOADS / "Defense-Materials.zip"
     defense_count = write_zip(defense, included)
