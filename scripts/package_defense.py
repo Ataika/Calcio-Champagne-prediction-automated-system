@@ -42,10 +42,35 @@ def safe(path: Path) -> bool:
     return True
 
 
-def write_zip(output: Path, files: list[tuple[Path, str]]) -> int:
+def inlined_index() -> str:
+    """A self-contained copy of the study site's entry page for the archive.
+
+    People open files straight from a zip preview, where the page loads but
+    its sibling style.css / data.js / app.js do not — a bare page. Inlining
+    them removes the failure mode; the extracted folder behaves identically.
+    """
+    site = ROOT / "defense/site"
+    html = (site / "index.html").read_text(encoding="utf-8")
+    css = (site / "style.css").read_text(encoding="utf-8")
+    data = (site / "data.js").read_text(encoding="utf-8")
+    app = (site / "app.js").read_text(encoding="utf-8")
+    html = html.replace('<link rel="stylesheet" href="style.css">', "<style>" + css + "</style>", 1)
+    # defer only applies to external scripts; an inline one in <head> would run
+    # before <main> exists. Drop the head tags and run the code at the end of body.
+    html = html.replace('<script src="data.js" defer></script><script src="app.js" defer></script>', "", 1)
+    script = (data + "\n" + app).replace("</script", "<\\/script")
+    html = html.replace("</body>", "<script>" + script + "</script></body>", 1)
+    if "style.css" in html or 'src="data.js"' in html:
+        raise RuntimeError("index.html inlining failed; the template tags changed")
+    return html
+
+
+def write_zip(output: Path, files: list[tuple[Path, str]], extra_text: list[tuple[str, str]] | None = None) -> int:
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=8) as archive:
         for source, arcname in sorted(files, key=lambda item: item[1]):
             archive.write(source, arcname)
+        for arcname, text in (extra_text or []):
+            archive.writestr(arcname, text)
     with zipfile.ZipFile(output) as archive:
         bad = archive.testzip()
         if bad:
@@ -73,8 +98,10 @@ def main() -> None:
             # safe() here too: this walk does not go through tracked_paths()
             if p.is_file() and p.name not in OMIT_ZIPS and safe(p):
                 included.append((p, f"{arcroot}/{p.relative_to(base).as_posix()}"))
+    included = [(p, a) for p, a in included if a != "Calcio-Champagne-Defense/site/index.html"]
     defense = DOWNLOADS / "Defense-Materials.zip"
-    defense_count = write_zip(defense, included)
+    defense_count = write_zip(defense, included,
+                              extra_text=[("Calcio-Champagne-Defense/site/index.html", inlined_index())])
     print(f"{project.name}: {project.stat().st_size / 1024 / 1024:.2f} MiB · {project_count} files")
     print(f"{defense.name}: {defense.stat().st_size / 1024 / 1024:.2f} MiB · {defense_count} files")
     print("Excluded .env/secrets, raw data, model weights, Docker images and recursive archives.")
