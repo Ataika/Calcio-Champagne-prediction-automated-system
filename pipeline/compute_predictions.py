@@ -11,6 +11,7 @@ Prediction = one global linear fit of "change in index next season" against
 trend line, not a trained ML model — it's meant to answer "does spending predict a
 rise in attacking output", not to be a production forecaster.
 """
+import importlib
 import json
 import os
 import re
@@ -34,6 +35,11 @@ except ImportError:
     import power_ratings
     import proxy_xg
     import shap_analysis
+
+OPTIONAL_ANALYSES = [
+    "halftime_patterns", "home_advantage", "referee_discipline", "corner_style",
+    "extreme_results", "injury_burden", "transfer_windows", "odds_calibration",
+]
 
 MODELS_DIR = "/models"
 
@@ -785,6 +791,20 @@ def main():
     discipline_rows = discipline_effect.compute(conn)
     discipline_effect.write(conn, discipline_rows)
     print(f"[pipeline] red-card effect: {len(discipline_rows)} league groups", flush=True)
+
+    # Optional analyses: any module listed here runs if its file exists, so a
+    # new analysis is one self-contained file plus one name in this list.
+    # Contract: compute(conn) -> rows/frame, write(conn, result), REPORT label.
+    for module_name in OPTIONAL_ANALYSES:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        result = module.compute(conn)
+        module.write(conn, result)
+        # a module may return one frame or a dict of named frames
+        count = sum(len(v) for v in result.values()) if isinstance(result, dict) else len(result)
+        print(f"[pipeline] {getattr(module, 'REPORT', module_name)}: {count:,} rows", flush=True)
 
     conn.close()
     output = Path(os.getenv("RESULTS_DIR", "/results"))
