@@ -212,3 +212,31 @@ JOIN squad_size sq ON sq.team_id = ls.team_id AND sq.season_name = ls.season_nam
 -- seem to absorb injuries (depth/rotation) without it showing up in the
 -- final table — a genuine null result, not a query bug (checked both the
 -- raw-total and per-player-normalized versions, both come out near zero).
+
+-- ---------------------------------------------------------------------------
+-- Squad geography: how many citizenships does each club-season field, and do
+-- more international squads score more? Citizenship can list two countries
+-- ("Italy, Argentina"): the first is counted, a stated simplification.
+WITH squads AS (
+    SELECT perf.team_id,
+           MAX(perf.team_name) AS team_name,
+           perf.season_name,
+           perf.competition_id,
+           COUNT(DISTINCT split_part(prof.citizenship, ',', 1)) AS citizenships,
+           COUNT(DISTINCT perf.player_id) AS players
+    FROM player_performances perf
+    JOIN player_profiles prof ON prof.player_id = perf.player_id
+    WHERE prof.citizenship IS NOT NULL AND prof.citizenship <> ''
+    GROUP BY perf.team_id, perf.season_name, perf.competition_id
+)
+SELECT s.team_name, s.season_name, s.competition_id,
+       s.citizenships, s.players,
+       ROUND(s.citizenships::numeric / s.players, 2) AS mix_ratio,
+       ci.champagne_index
+FROM squads s
+JOIN champagne_index_by_team_season ci
+  ON ci.team_id = s.team_id AND ci.season_name = s.season_name
+ AND ci.competition_id = s.competition_id
+WHERE s.players >= 15
+ORDER BY s.citizenships DESC
+LIMIT 25;
