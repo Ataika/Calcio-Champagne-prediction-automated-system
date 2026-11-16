@@ -22,6 +22,8 @@ of raw data is added to this repository. The checks behind this statement were
 repeated on 9 November 2026 and are recorded, together with the three options
 that can close the requirement, in [licence decision](LICENCE_DECISION.md).
 
+- 16 November 2026: licence request sent to the dataset owner (Option A in `docs/LICENCE_DECISION.md`): https://github.com/salimt/football-datasets/issues/6. No reply yet; the source is still not open-licensed.
+
 ## The metadata-table difference
 
 The existing `team_competitions_seasons.csv` has 196,378 rows and seven fields.
