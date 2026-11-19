@@ -548,9 +548,32 @@ def project():
         COUNT(*) FILTER (WHERE home_shots_on_target IS NOT NULL AND away_shots_on_target IS NOT NULL) AS sot_matches,
         COUNT(*) FILTER (WHERE home_corners IS NOT NULL AND away_corners IS NOT NULL) AS corner_matches
         FROM match_results""") if exists("match_results") else []
+    # Match-pattern analyses (optional modules): summaries only, each guarded
+    # by a table-existence check like every optional read above.
+    home_adv_rows = read("""SELECT league_code, ROUND(AVG(home_win_share), 3) AS home_win_share,
+                                   SUM(matches) AS matches
+                            FROM home_advantage_by_league_season
+                            GROUP BY league_code ORDER BY home_win_share DESC""") \
+        if exists("home_advantage_by_league_season") else []
+    referee_rows = read("""SELECT referee, league_code, matches, yellows_per_match
+                           FROM referee_discipline ORDER BY yellows_per_match DESC LIMIT 5""") \
+        if exists("referee_discipline") else []
+    comeback_rows = read("""SELECT COUNT(*) AS team_seasons, SUM(comeback_win) AS comeback_wins,
+                                   SUM(blew_lead) AS blown_leads
+                            FROM halftime_patterns""") if exists("halftime_patterns") else []
+    biggest_rows = read("""SELECT league_code, season_name, scoreline, margin
+                           FROM biggest_wins ORDER BY margin DESC, match_date LIMIT 5""") \
+        if exists("biggest_wins") else []
+    odds_rows = read("SELECT * FROM odds_calibration ORDER BY bucket") if exists("odds_calibration") else []
+    odds_vs_rows = read("""SELECT league_code, matches, favourite_win_rate, rating_win_rate, agreement_rate
+                           FROM odds_vs_ratings ORDER BY league_code""") if exists("odds_vs_ratings") else []
     return clean({"tables": counts, "coverage": coverage, "benchmark": benchmark,
                   "linear": latest("champagne_model"), "ml": model,
                   "model_showdown": showdown, "shap": shap_rows,
+                  "home_advantage": home_adv_rows, "strictest_referees": referee_rows,
+                  "halftime_summary": comeback_rows[0] if comeback_rows else None,
+                  "biggest_wins": biggest_rows,
+                  "odds_calibration": odds_rows, "odds_vs_ratings": odds_vs_rows,
                   "red_card_effect": red_card_rows[0] if red_card_rows else None,
                   "power_ratings": rating_rows[0] if rating_rows else None,
                   "proxy_xg": proxy_rows[0] if proxy_rows else None,
