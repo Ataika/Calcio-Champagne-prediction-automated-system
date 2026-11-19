@@ -81,14 +81,14 @@ the five-feature model and 0.1502 for the attack+defense variant, health
 
 | Field | Value |
 | --- | --- |
-| Who ran it | |
-| Date | |
-| Machine (CPU, RAM, OS) | |
-| Docker Desktop version | |
-| Total time for `docker compose up --build` | |
-| Did it work without help from the author? | |
-| Anything missing from the README | |
-| Fix applied afterwards (commit) | |
+| Who ran it |Jacopo Scaccianoce |
+| Date |17 november 2026|
+| Machine (CPU, RAM, OS) | Apple M4, 16 GB RAM, macOS 26.6.2|
+| Docker Desktop version | 4.99.0 (245822)|
+| Total time for `docker compose up --build` |2 min 32 s, including image build and source download (I ran `docker compose up --build -d`, as in INSTRUCTIONS.md)  |
+| Did it work without help from the author? |The base stack yes: ready=true, 5,605,055 rows across 11 tables from revision da9227e1f42b, test R² 0.1271 / 0.1502, SHAP 0.2054, identical to the reference. The match analyses needed the match CSVs placed by hand|
+|Anything missing from the README| The match-results CSVs are not downloaded by the loader and are not in the repository. The README mentions them as optional enrichment, but INSTRUCTIONS.md does not, so on a fresh checkout `match_results` is empty and every match analysis reports 0 rows without any warning. I had to place the 25 football-data.co.uk files in `data/matches/` by hand; after that I got 8,908 matches and all the expected counts. Also, the browser opens the football-data CSV links as text instead of downloading them.| 
+| Fix applied afterwards (commit) |None yet |
 
 An entry is only evidence if the person who ran it writes it. If a step needed
 a hint from the author, record the hint: that is precisely the README gap the
