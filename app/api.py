@@ -1,0 +1,574 @@
+"""Same-origin HTTP API and editorial frontend. Pipeline outputs are read-only.
+
+Run inside Compose, or: uvicorn app.api:app --port 8502
+No raw player table is exposed; every chart has a bounded league/season scope.
+"""
+from __future__ import annotations
+
+import csv
+import io
+import json
+import logging
+import math
+import os
+import pathlib
+import threading
+from contextlib import contextmanager
+from datetime import date, datetime
+from decimal import Decimal
+from functools import lru_cache
+
+import joblib
+import pandas as pd
+import psycopg2
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from scipy import stats
+
+ROOT = pathlib.Path(__file__).resolve().parent
+MODEL_PATH = pathlib.Path(os.getenv("LAB_MODEL_PATH", "/models/champagne_rf_model.joblib"))
+RESULTS_PATH = pathlib.Path(os.getenv("RESULTS_PATH", "/results/results.json"))
+LEAGUES = {
+    "IT1": {"name": "Serie A", "country": "Italy", "code": "I1"},
+    "GB1": {"name": "Premier League", "country": "England", "code": "E0"},
+    "ES1": {"name": "LaLiga", "country": "Spain", "code": "SP1"},
+    "L1": {"name": "Bundesliga", "country": "Germany", "code": "D1"},
+    "FR1": {"name": "Ligue 1", "country": "France", "code": "F1"},
+}
+FEATURES = ["champagne_index", "total_spend", "attacking_spend", "squad_avg_age", "market_value_change"]
+REQUIRED_OUTPUT_TABLES = ("champagne_results", "league_standings", "lab_team_features", "match_results")
+app = FastAPI(title="Calcio Champagne", version="2.0.0", docs_url=None, redoc_url=None,
+              openapi_url="/api/openapi.json")
+log = logging.getLogger("calcio")
+
+
+def clean(value):
+    """Strict JSON: missing numeric values are null, never NaN or Infinity."""
+    if isinstance(value, dict):
+        return {k: clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [clean(v) for v in value]
+    if isinstance(value, Decimal):
+        value = float(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return value
+
+
+@lru_cache(maxsize=1)
+def pool():
+    return ThreadedConnectionPool(
+        1, 8, host=os.getenv("POSTGRES_HOST", "db"), port=os.getenv("POSTGRES_PORT", "5432"),
+        dbname=os.environ["POSTGRES_DB"], user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"], connect_timeout=5,
+        options="-c default_transaction_read_only=on -c statement_timeout=15000",
+    )
+
+
+@contextmanager
+def connection():
+    conn = pool().getconn()
+    try:
+        yield conn
+    finally:
+        conn.rollback()
+        pool().putconn(conn)
+
+
+def read(sql, params=()):
+    with connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        return clean(cur.fetchall())
+
+
+def exists(table):
+    return bool(read("SELECT to_regclass(%s) AS name", ("public." + table,))[0]["name"])
+
+
+def latest(table):
+    # Callers supply only internal constant names, never request parameters.
+    if table not in {"champagne_model", "champagne_model_ml", "champagne_vs_position_model", "transfer_fee_model", "defense_spend_model"}:
+        raise ValueError("Unknown model table")
+    if not exists(table):
+        return None
+    order = ("ORDER BY CASE WHEN model_variant='attack_only' THEN 0 ELSE 1 END, computed_at DESC"
+             if table == "champagne_model_ml" else "ORDER BY computed_at DESC")
+    rows = read(f"SELECT * FROM {table} {order} LIMIT 1")
+    if not rows:
+        return None
+    row = rows[0]
+    for key in ("feature_importances", "evaluation"):
+        if isinstance(row.get(key), str):
+            row[key] = json.loads(row[key])
+    return row
+
+
+def scope(competition, season):
+    if competition not in LEAGUES:
+        raise HTTPException(422, "Choose one of the five supported leagues.")
+    import re
+    match = re.fullmatch(r"(\d{2})/(\d{2})", season)
+    if not match or (int(match[1]) + 1) % 100 != int(match[2]):
+        raise HTTPException(422, "Season must be consecutive years, for example 24/25.")
+
+
+def regression(rows, x, y):
+    pairs = [(r[x], r[y]) for r in rows if r.get(x) is not None and r.get(y) is not None]
+    if len(pairs) < 3 or len({p[0] for p in pairs}) < 2 or len({p[1] for p in pairs}) < 2:
+        return {"n": len(pairs), "r": None, "slope": None, "intercept": None, "p": None}
+    fit = stats.linregress(*zip(*pairs))
+    return clean({"n": len(pairs), "r": fit.rvalue, "p": fit.pvalue,
+                  "slope": fit.slope, "intercept": fit.intercept})
+
+
+@app.middleware("http")
+async def response_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
+        "base-uri 'self'; frame-ancestors 'none'"
+    )
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.exception_handler(psycopg2.Error)
+async def database_error(request, exc):
+    log.exception("Database request failed", exc_info=exc)
+    return JSONResponse(status_code=503, content={"detail": "Data is temporarily unavailable. Please retry."})
+
+
+@app.get("/api/health")
+def health():
+    tables = read("""SELECT name, to_regclass('public.' || name) IS NOT NULL AS available
+                     FROM unnest(%s::text[]) AS required(name)""", (list(REQUIRED_OUTPUT_TABLES),))
+    missing = [table["name"] for table in tables if not table["available"]]
+    has_results = False
+    if not missing:
+        has_results = read("SELECT EXISTS (SELECT 1 FROM champagne_results) AS available")[0]["available"]
+    ready = not missing and has_results
+    return JSONResponse(status_code=200 if ready else 503,
+                        content={"ready": ready, "model_available": MODEL_PATH.exists(),
+                                 "missing_tables": missing, "has_results": has_results})
+
+
+@app.get("/api/meta")
+def metadata():
+    seasons = read("""
+        SELECT competition_id, season_name, season_key, COUNT(*) AS clubs,
+               MIN(matches) AS min_matches, MAX(matches) AS max_matches,
+               ROUND(AVG(matches), 1) AS average_matches
+        FROM champagne_results WHERE competition_id = ANY(%s)
+        GROUP BY competition_id, season_name, season_key ORDER BY season_key DESC
+    """, (list(LEAGUES),))
+    leagues = []
+    for key, info in LEAGUES.items():
+        available = [dict(s, complete=s["average_matches"] >= 30) for s in seasons if s["competition_id"] == key]
+        complete = [s for s in available if s["complete"]]
+        leagues.append(dict(info, id=key, seasons=available, default_season=complete[0]["season_name"] if complete else None))
+    return {"leagues": leagues, "default_competition": "IT1", "model": latest("champagne_model_ml")}
+
+
+def season_rows(competition, season, min_matches=15):
+    return read("""
+        SELECT cr.*, ls.position, ls.points, ls.played, ls.wins, ls.draws, ls.losses,
+               ls.goals_for, ls.goals_against, ls.goal_diff,
+               ls.goals_for_per_match, ls.goals_against_per_match,
+               ls.attack_rank, ls.defense_rank,
+               prev.champagne_index AS previous_index,
+               cr.champagne_index - prev.champagne_index AS change_from_previous
+        FROM champagne_results cr
+        LEFT JOIN (
+            SELECT standings.*,
+                   goals_for::numeric / NULLIF(played, 0) AS goals_for_per_match,
+                   goals_against::numeric / NULLIF(played, 0) AS goals_against_per_match,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_for::numeric / NULLIF(played, 0) DESC) AS attack_rank,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_against::numeric / NULLIF(played, 0) ASC) AS defense_rank
+            FROM league_standings AS standings
+        ) ls ON ls.team_id=cr.team_id
+            AND ls.competition_id=cr.competition_id AND ls.season_name=cr.season_name
+        LEFT JOIN champagne_results prev ON prev.team_id=cr.team_id
+            AND prev.competition_id=cr.competition_id AND prev.season_key=cr.season_key-1
+        WHERE cr.competition_id=%s AND cr.season_name=%s AND cr.matches >= %s
+        ORDER BY cr.champagne_index DESC, cr.team_name
+    """, (competition, season, min_matches))
+
+
+@app.get("/api/season")
+def season_data(competition: str = "IT1", season: str = "24/25", min_matches: int = Query(15, ge=5, le=38)):
+    scope(competition, season)
+    rows = season_rows(competition, season, min_matches)
+    # Correlation with final position uses only comparable season snapshots.
+    comparable = [r for r in rows if r.get("played", 0) and r["played"] >= 30 and r["matches"] >= 0.8 * r["played"]]
+    return {"rows": rows, "spend_correlation": regression(rows, "total_spend", "champagne_index"),
+            "position_correlation": regression(comparable, "champagne_index", "position"),
+            "min_matches": min_matches, "league": LEAGUES[competition]}
+
+
+@app.get("/api/analysis")
+def analysis(competition: str = "IT1", season: str = "24/25"):
+    scope(competition, season)
+    key = 2000 + int(season[:2]) if int(season[:2]) < 50 else 1900 + int(season[:2])
+    rows = read("""
+        SELECT team_id, team_name, season_name, season_key, total_spend, attacking_spend,
+               champagne_index, delta_index, matches
+        FROM champagne_results WHERE competition_id=%s AND season_key BETWEEN %s AND %s
+            AND delta_index IS NOT NULL AND matches>=30
+        ORDER BY season_key, team_name
+    """, (competition, key - 4, key))
+    return {"rows": rows, "correlation": regression(rows, "total_spend", "delta_index"),
+            "from_year": key - 4, "to_year": key, "global_model": latest("champagne_model")}
+
+
+def summarize_head_to_head(team_id, team_name, matches):
+    """Read each score from this club's perspective, including away matches."""
+    wins = draws = losses = goals_for = goals_against = clean_sheets = 0
+    match_profile = {
+        "shots": ("home_shots", "away_shots"),
+        "shots_on_target": ("home_shots_on_target", "away_shots_on_target"),
+        "corners": ("home_corners", "away_corners"),
+    }
+    profile_totals = {name: {"for": 0, "against": 0, "matches": 0} for name in match_profile}
+    for match in matches:
+        home = match["home_team_id"] == team_id
+        scored = match["home_goals"] if home else match["away_goals"]
+        conceded = match["away_goals"] if home else match["home_goals"]
+        goals_for += scored
+        goals_against += conceded
+        wins += scored > conceded
+        draws += scored == conceded
+        losses += scored < conceded
+        clean_sheets += conceded == 0
+        for name, (home_key, away_key) in match_profile.items():
+            own = match.get(home_key) if home else match.get(away_key)
+            opponent = match.get(away_key) if home else match.get(home_key)
+            if own is not None and opponent is not None:
+                profile_totals[name]["for"] += own
+                profile_totals[name]["against"] += opponent
+                profile_totals[name]["matches"] += 1
+    profile = {}
+    for name, values in profile_totals.items():
+        denominator = values["matches"]
+        profile[f"{name}_matches"] = denominator
+        profile[f"{name}_per_match"] = values["for"] / denominator if denominator else None
+        profile[f"{name}_against_per_match"] = values["against"] / denominator if denominator else None
+    return {"team_id": team_id, "team_name": team_name, "matches": len(matches),
+            "wins": wins, "draws": draws, "losses": losses,
+            "goals_for": goals_for, "goals_against": goals_against,
+            "goal_difference": goals_for - goals_against,
+            "goals_per_match": goals_for / len(matches) if matches else None,
+            "clean_sheets": clean_sheets, "points": 3 * wins + draws, **profile}
+
+
+@app.get("/api/head-to-head")
+def head_to_head(team_a: int = Query(..., gt=0, le=2_147_483_647),
+                 team_b: int = Query(..., gt=0, le=2_147_483_647),
+                 competition: str = "IT1", season: str = "24/25",
+                 team_c: int | None = None):
+    scope(competition, season)
+    ids = [team_a, team_b] + ([team_c] if team_c is not None else [])
+    if team_c is not None and not 0 < team_c <= 2_147_483_647:
+        raise HTTPException(422, "Invalid third club.")
+    if len(set(ids)) != len(ids):
+        raise HTTPException(422, "Choose different clubs.")
+    clubs = read("""SELECT team_id, team_name FROM champagne_results
+                    WHERE competition_id=%s AND season_name=%s AND team_id=ANY(%s)""",
+                 (competition, season, ids))
+    names = {row["team_id"]: row["team_name"] for row in clubs}
+    if any(team not in names for team in ids):
+        raise HTTPException(404, "All selected clubs must belong to the selected league and season.")
+    league_code = LEAGUES[competition]["code"]
+    # Every completed meeting among the selected clubs (2 or 3) — any team vs.
+    # any other team in `ids`, never a team against itself.
+    matches = read("""
+        SELECT match_date, home_team_id, away_team_id, home_goals, away_goals,
+               home_shots, away_shots, home_shots_on_target, away_shots_on_target,
+               home_corners, away_corners
+        FROM match_results WHERE league_code=%s AND season_name=%s
+            AND home_team_id=ANY(%s) AND away_team_id=ANY(%s) AND home_team_id<>away_team_id
+            AND result IN ('H', 'D', 'A') AND home_goals IS NOT NULL AND away_goals IS NOT NULL
+        ORDER BY match_date NULLS LAST, home_team_id, away_team_id
+    """, (league_code, season, ids, ids))
+    available = bool(matches)
+    if not matches:
+        available = read("""SELECT EXISTS (
+            SELECT 1 FROM match_results WHERE league_code=%s AND season_name=%s
+                AND result IN ('H', 'D', 'A') AND home_goals IS NOT NULL AND away_goals IS NOT NULL
+        ) AS available""", (league_code, season))[0]["available"]
+    for match in matches:
+        match["home_team_name"] = names[match["home_team_id"]]
+        match["away_team_name"] = names[match["away_team_id"]]
+    # Each team's summary covers its matches against any of the other
+    # selected clubs, not just one specific opponent — a round-robin summary
+    # when three clubs are selected, the original pairwise one when two are.
+    teams = []
+    for team in ids:
+        own_matches = [m for m in matches if m["home_team_id"] == team or m["away_team_id"] == team]
+        teams.append(summarize_head_to_head(team, names[team], own_matches))
+    return {"competition": competition, "season": season, "source": "football-data.co.uk",
+            "enrichment_available": available, "matches": matches, "teams": teams}
+
+
+def team_match_profile(team_id, competition, season):
+    """Observed match statistics with separate denominators for each source field."""
+    league_code = LEAGUES[competition]["code"]
+    rows = read("""
+        WITH team_matches AS (
+            SELECT
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_goals ELSE m.away_goals END AS goals_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_shots ELSE m.away_shots END AS shots_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_shots ELSE m.home_shots END AS shots_against,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_shots_on_target ELSE m.away_shots_on_target END AS sot_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_shots_on_target ELSE m.home_shots_on_target END AS sot_against,
+                CASE WHEN m.home_team_id = t.team_id THEN m.home_corners ELSE m.away_corners END AS corners_for,
+                CASE WHEN m.home_team_id = t.team_id THEN m.away_corners ELSE m.home_corners END AS corners_against
+            FROM match_results m CROSS JOIN (SELECT %s::integer AS team_id) t
+            WHERE m.league_code=%s AND m.season_name=%s
+              AND (m.home_team_id=t.team_id OR m.away_team_id=t.team_id)
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL) AS shots_matches,
+            SUM(shots_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL), 0) AS shots_for_per_match,
+            SUM(shots_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE shots_for IS NOT NULL AND shots_against IS NOT NULL), 0) AS shots_against_per_match,
+            COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL) AS sot_matches,
+            SUM(sot_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL), 0) AS sot_for_per_match,
+            SUM(sot_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE sot_for IS NOT NULL AND sot_against IS NOT NULL), 0) AS sot_against_per_match,
+            100.0 * SUM(sot_for) FILTER (WHERE sot_for IS NOT NULL AND shots_for IS NOT NULL)
+                / NULLIF(SUM(shots_for) FILTER (WHERE sot_for IS NOT NULL AND shots_for IS NOT NULL), 0) AS shot_accuracy_pct,
+            100.0 * SUM(goals_for) FILTER (WHERE sot_for IS NOT NULL)
+                / NULLIF(SUM(sot_for) FILTER (WHERE sot_for IS NOT NULL), 0) AS goal_conversion_pct,
+            COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL) AS corner_matches,
+            SUM(corners_for)::numeric / NULLIF(COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL), 0) AS corners_for_per_match,
+            SUM(corners_against)::numeric / NULLIF(COUNT(*) FILTER (WHERE corners_for IS NOT NULL AND corners_against IS NOT NULL), 0) AS corners_against_per_match
+        FROM team_matches
+    """, (team_id, league_code, season))
+    return rows[0] if rows else {}
+
+
+@app.get("/api/clubs/{team_id}")
+def club(team_id: int, competition: str = "IT1", season: str = "24/25"):
+    scope(competition, season)
+    if team_id <= 0:
+        raise HTTPException(422, "Invalid club.")
+    rows = read("""
+        SELECT cr.*, ls.position, ls.points, ls.played,
+               ls.goals_for, ls.goals_against, ls.goal_diff,
+               ls.goals_for_per_match, ls.goals_against_per_match,
+               ls.attack_rank, ls.defense_rank
+        FROM champagne_results cr
+        LEFT JOIN (
+            SELECT standings.*,
+                   goals_for::numeric / NULLIF(played, 0) AS goals_for_per_match,
+                   goals_against::numeric / NULLIF(played, 0) AS goals_against_per_match,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_for::numeric / NULLIF(played, 0) DESC) AS attack_rank,
+                   RANK() OVER (PARTITION BY competition_id, season_name
+                                ORDER BY goals_against::numeric / NULLIF(played, 0) ASC) AS defense_rank
+            FROM league_standings AS standings
+        ) ls ON cr.team_id=ls.team_id
+            AND cr.competition_id=ls.competition_id AND cr.season_name=ls.season_name
+        WHERE cr.team_id=%s AND cr.competition_id=%s ORDER BY cr.season_key
+    """, (team_id, competition))
+    if not rows:
+        raise HTTPException(404, "This club has no data in the selected league.")
+    current = next((r for r in rows if r["season_name"] == season), None)
+    if current:
+        current.update(team_match_profile(team_id, competition, season))
+        if exists("team_power_ratings"):
+            rating_rows = read("""
+                SELECT * FROM (
+                    SELECT team_id, attack_rating, defense_rating,
+                           RANK() OVER (PARTITION BY competition_id, season_name ORDER BY attack_rating DESC) AS attack_model_rank,
+                           RANK() OVER (PARTITION BY competition_id, season_name ORDER BY defense_rating DESC) AS defense_model_rank
+                    FROM team_power_ratings WHERE competition_id=%s AND season_name=%s
+                ) ratings WHERE team_id=%s
+            """, (competition, season, team_id))
+            if rating_rows:
+                current.update(rating_rows[0])
+        if exists("proxy_xg_by_team_season"):
+            proxy_rows = read("""
+                SELECT proxy_xg_per_match, proxy_xga_per_match, finishing_luck, defensive_luck
+                FROM proxy_xg_by_team_season
+                WHERE team_id=%s AND competition_id=%s AND season_name=%s
+            """, (team_id, competition, season))
+            if proxy_rows:
+                current.update(proxy_rows[0])
+    clusters = read("SELECT * FROM club_style_clusters WHERE team_id=%s AND season_name=%s AND competition_name=%s",
+                    (team_id, season, LEAGUES[competition]["name"])) if exists("club_style_clusters") else []
+    home_away_rows = read("""
+        SELECT home_played, home_goals_for_per_match, home_goals_against_per_match,
+               away_played, away_goals_for_per_match, away_goals_against_per_match
+        FROM home_away_splits WHERE team_id=%s AND season_name=%s AND competition_id=%s
+    """, (team_id, season, competition)) if exists("home_away_splits") else []
+    return {"team_name": rows[-1]["team_name"], "history": rows, "current": current,
+            "style": clusters[0] if clusters else None,
+            "home_away": home_away_rows[0] if home_away_rows else None}
+
+
+@app.get("/api/clubs/{team_id}/players")
+def club_players(team_id: int, competition: str = "IT1", season: str = "24/25"):
+    """Per-90 rates for the club's roster that season. goals_conceded_per90/
+    clean_sheets_per90 are only meaningful for goalkeepers in this source —
+    player_performances.goals_conceded/clean_sheets are populated on
+    goalkeeper rows only, outfield players always read zero there."""
+    scope(competition, season)
+    if team_id <= 0:
+        raise HTTPException(422, "Invalid club.")
+    rows = read("""
+        SELECT pp.player_id, pr.player_name, pr.main_position, pp.minutes_played,
+               ROUND(pp.goals * 90.0 / NULLIF(pp.minutes_played, 0), 2) AS goals_per90,
+               ROUND(pp.assists * 90.0 / NULLIF(pp.minutes_played, 0), 2) AS assists_per90,
+               CASE WHEN pr.main_position = 'Goalkeeper'
+                    THEN ROUND(pp.goals_conceded * 90.0 / NULLIF(pp.minutes_played, 0), 2) END
+                    AS goals_conceded_per90,
+               CASE WHEN pr.main_position = 'Goalkeeper'
+                    THEN ROUND(pp.clean_sheets * 90.0 / NULLIF(pp.minutes_played, 0), 3) END
+                    AS clean_sheets_per90
+        FROM player_performances pp
+        LEFT JOIN player_profiles pr ON pr.player_id = pp.player_id
+        WHERE pp.team_id=%s AND pp.season_name=%s AND pp.competition_id=%s AND pp.minutes_played >= 90
+        ORDER BY pp.minutes_played DESC
+        LIMIT 25
+    """, (team_id, season, competition))
+    return {"team_id": team_id, "season_name": season, "competition_id": competition, "players": rows}
+
+
+_model_lock = threading.Lock()
+_model_cache = {"stamp": None, "bundle": None}
+
+
+def lab_model():
+    if not MODEL_PATH.exists():
+        raise HTTPException(503, "The scenario model is not available yet. Run the pipeline first.")
+    stamp = MODEL_PATH.stat().st_mtime_ns
+    with _model_lock:
+        if _model_cache["stamp"] != stamp:
+            _model_cache.update(stamp=stamp, bundle=joblib.load(MODEL_PATH))
+    return _model_cache["bundle"]
+
+
+@app.get("/api/lab/config")
+def lab_config(team_id: int = Query(..., gt=0), competition: str = "IT1", season: str = "24/25"):
+    scope(competition, season)
+    bundle = lab_model()
+    if not exists("lab_team_features"):
+        raise HTTPException(503, "Club scenario inputs have not been computed. Run the updated pipeline.")
+    rows = read("""SELECT f.*, cr.team_name FROM lab_team_features f
+                   JOIN champagne_results cr USING (team_id, competition_id, season_name)
+                   WHERE f.team_id=%s AND f.competition_id=%s AND f.season_name=%s""",
+                (team_id, competition, season))
+    if not rows:
+        raise HTTPException(404, "No scenario inputs for this club-season.")
+    row = rows[0]
+    missing = [f for f in FEATURES if row[f] is None]
+    return {"features": {f: row[f] for f in FEATURES}, "missing": missing,
+            "ranges": bundle["feature_ranges"], "evaluation": bundle.get("evaluation"), "team_name": row["team_name"]}
+
+
+class Scenario(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    champagne_index: float = Field(ge=0, le=40)
+    total_spend: float = Field(ge=0, le=2_000_000_000)
+    attacking_spend: float = Field(ge=0, le=2_000_000_000)
+    squad_avg_age: float = Field(ge=14, le=45)
+    market_value_change: float = Field(ge=-1_000_000_000, le=1_000_000_000)
+
+    @model_validator(mode="after")
+    def attacking_budget(self):
+        if self.attacking_spend > self.total_spend:
+            raise ValueError("Attacking spend cannot exceed total spend.")
+        return self
+
+
+@app.post("/api/lab/predict")
+def predict(scenario: Scenario):
+    bundle = lab_model()
+    values = scenario.model_dump()
+    frame = pd.DataFrame([values], columns=bundle["feature_cols"])
+    delta = float(bundle["model"].predict(frame)[0])
+    outside = [f for f in FEATURES if values[f] < bundle["feature_ranges"][f]["min"] or values[f] > bundle["feature_ranges"][f]["max"]]
+    return clean({"delta": delta, "next_index": values["champagne_index"] + delta,
+                  "outside_training_range": outside, "evaluation": bundle.get("evaluation")})
+
+
+@app.get("/api/export")
+def export(competition: str = "IT1", season: str = "24/25"):
+    scope(competition, season)
+    rows = season_rows(competition, season)
+    cols = ["team_name", "season_name", "competition_name", "matches", "champagne_index", "total_spend", "attacking_spend", "position", "points"]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=cols, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        # Spreadsheet formula injection protection for externally supplied names.
+        writer.writerow({k: "'" + v if isinstance(v, str) and v.startswith(("=", "+", "-", "@")) else v for k, v in row.items()})
+    return Response(output.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="calcio-{competition}-{season.replace("/", "-")}.csv"'})
+
+
+@app.get("/api/project")
+def project():
+    counts = read("""SELECT relname AS name, n_live_tup AS rows FROM pg_stat_user_tables
+        WHERE relname=ANY(%s) ORDER BY n_live_tup DESC""", ([
+        "player_profiles", "player_performances", "player_market_value", "player_latest_market_value",
+        "player_injuries", "player_national_performances", "player_teammates_played_with", "team_details",
+        "team_competitions_seasons", "team_children", "transfer_history", "match_results"],))
+    coverage = read("SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT team_id) AS clubs, MIN(season_key) AS from_year, MAX(season_key) AS to_year FROM champagne_results")[0]
+    benchmark = json.loads(RESULTS_PATH.read_text()) if RESULTS_PATH.exists() else None
+    model = latest("champagne_model_ml")
+    model_variants = read("""SELECT model_variant, r2_score, n_observations, evaluation
+                            FROM champagne_model_ml ORDER BY computed_at DESC""") if exists("champagne_model_ml") else []
+    for variant in model_variants:
+        if isinstance(variant.get("evaluation"), str):
+            variant["evaluation"] = json.loads(variant["evaluation"])
+    by_variant = {row["model_variant"]: row for row in model_variants}
+    showdown = {"attack_only": by_variant.get("attack_only"),
+                "attack_defense": by_variant.get("attack_defense")}
+    shap_rows = read("""SELECT feature, mean_abs_shap FROM champagne_model_shap
+                       WHERE model_variant='attack_defense' ORDER BY mean_abs_shap DESC""") if exists("champagne_model_shap") else []
+    red_card_rows = read("SELECT * FROM discipline_match_effect WHERE league_code='ALL'") if exists("discipline_match_effect") else []
+    rating_rows = read("""SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT (league_code, season_name)) AS league_seasons
+                         FROM team_power_ratings""") if exists("team_power_ratings") else []
+    proxy_rows = read("""SELECT COUNT(*) AS team_seasons, COUNT(DISTINCT (league_code, season_name)) AS league_seasons
+                        FROM proxy_xg_by_team_season""") if exists("proxy_xg_by_team_season") else []
+    match_stats_rows = read("""SELECT COUNT(*) AS matches,
+        COUNT(*) FILTER (WHERE home_shots IS NOT NULL AND away_shots IS NOT NULL) AS shots_matches,
+        COUNT(*) FILTER (WHERE home_shots_on_target IS NOT NULL AND away_shots_on_target IS NOT NULL) AS sot_matches,
+        COUNT(*) FILTER (WHERE home_corners IS NOT NULL AND away_corners IS NOT NULL) AS corner_matches
+        FROM match_results""") if exists("match_results") else []
+    return clean({"tables": counts, "coverage": coverage, "benchmark": benchmark,
+                  "linear": latest("champagne_model"), "ml": model,
+                  "model_showdown": showdown, "shap": shap_rows,
+                  "red_card_effect": red_card_rows[0] if red_card_rows else None,
+                  "power_ratings": rating_rows[0] if rating_rows else None,
+                  "proxy_xg": proxy_rows[0] if proxy_rows else None,
+                  "match_stats_coverage": match_stats_rows[0] if match_stats_rows else None,
+                  "position": latest("champagne_vs_position_model"),
+                  "defense_spend": latest("defense_spend_model"),
+                  "transfer": latest("transfer_fee_model"),
+                  "course_source_verified": True})
+
+
+app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+
+
+@app.get("/api/docs", include_in_schema=False)
+def api_docs():
+    return FileResponse(ROOT / "static" / "api-docs.html")
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(ROOT / "static" / "index.html", headers={"Cache-Control": "no-cache"})

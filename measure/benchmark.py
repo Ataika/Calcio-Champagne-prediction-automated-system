@@ -18,6 +18,8 @@ import os
 import pathlib
 import platform
 import time
+from datetime import datetime, timezone
+from statistics import mean
 
 import psycopg2
 
@@ -43,7 +45,8 @@ TEAM_LOOKUP_QUERY = """
     WHERE team_id = %s
     GROUP BY team_id, team_name, season_name, competition_id;
 """
-N_LOOKUP_TEAMS = 300  # repeat the lookup for this many distinct teams to get a stable timing
+N_LOOKUP_TEAMS = 300
+REPEATS = 3
 
 
 def connect():
@@ -56,6 +59,8 @@ def connect():
                 dbname=os.environ["POSTGRES_DB"],
                 user=os.environ["POSTGRES_USER"],
                 password=os.environ["POSTGRES_PASSWORD"],
+                application_name="calcio_measure",
+                options="-c work_mem=64MB -c jit=off",
             )
         except psycopg2.OperationalError as exc:
             last_error = exc
@@ -76,7 +81,7 @@ def sample_team_ids(conn, n):
     with conn.cursor() as cur:
         cur.execute(
             "SELECT team_id FROM (SELECT DISTINCT team_id FROM player_performances) t "
-            "ORDER BY random() LIMIT %s;",
+            "ORDER BY md5(team_id::text || '42') LIMIT %s;",
             (n,),
         )
         return [row[0] for row in cur.fetchall()]
@@ -93,20 +98,24 @@ def time_team_lookups(conn, team_ids):
 
 def query_with_without_index(conn):
     team_ids = sample_team_ids(conn, N_LOOKUP_TEAMS)
-
-    with conn.cursor() as cur:
-        cur.execute("DROP INDEX IF EXISTS idx_pp_team_season_comp;")
-    conn.commit()
-    without = time_team_lookups(conn, team_ids)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_pp_team_season_comp "
-            "ON player_performances (team_id, season_name, competition_id);"
-        )
-    conn.commit()
-    with_index = time_team_lookups(conn, team_ids)
-    return without, with_index
+    without, with_index = [], []
+    try:
+        for _ in range(REPEATS):
+            with conn.cursor() as cur:
+                cur.execute("DROP INDEX IF EXISTS idx_pp_team_season_comp;")
+            conn.commit()
+            without.append(time_team_lookups(conn, team_ids))
+            with conn.cursor() as cur:
+                cur.execute("CREATE INDEX idx_pp_team_season_comp ON player_performances (team_id, season_name, competition_id);")
+            conn.commit()
+            with_index.append(time_team_lookups(conn, team_ids))
+    finally:
+        # A failed benchmark must not leave the application without its index.
+        conn.rollback()
+        with conn.cursor() as cur:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_pp_team_season_comp ON player_performances (team_id, season_name, competition_id);")
+        conn.commit()
+    return mean(without), mean(with_index), {"without_index": without, "with_index": with_index}
 
 
 def db_size_mb(conn):
@@ -121,7 +130,7 @@ def count_csv_rows(path):
         return sum(1 for _ in f) - 1  # minus header
 
 
-def growth_test(conn):
+def growth_test_once(conn):
     total_rows = count_csv_rows(BIG_TABLE_CSV)
     results = []
 
@@ -176,10 +185,21 @@ def growth_test(conn):
     return results
 
 
+def growth_test(conn):
+    runs = [growth_test_once(conn) for _ in range(REPEATS)]
+    return [dict(
+        pct=runs[0][i]["pct"], rows=runs[0][i]["rows"],
+        load_seconds=round(mean(run[i]["load_seconds"] for run in runs), 4),
+        query_seconds=round(mean(run[i]["query_seconds"] for run in runs), 4),
+        load_runs=[run[i]["load_seconds"] for run in runs],
+        query_runs=[run[i]["query_seconds"] for run in runs],
+    ) for i in range(3)]
+
+
 def main():
     conn = connect()
 
-    without_idx, with_idx = query_with_without_index(conn)
+    without_idx, with_idx, lookup_runs = query_with_without_index(conn)
     disk_mb = db_size_mb(conn)
     growth = growth_test(conn)
 
@@ -189,15 +209,29 @@ def main():
         "db_size_mb": disk_mb,
         "growth_test": growth,
         "machine": platform.platform(),
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "repeats": REPEATS,
+        "lookup_runs": lookup_runs,
+        "lookup_team_sample": "300 distinct teams ordered by md5(team_id || '42')",
+        "postgres_settings": {"work_mem": "64MB", "jit": "off"},
+        "raw_csv_mb": round(sum(p.stat().st_size for p in pathlib.Path(DATA_DIR).rglob("*.csv")) / (1024 ** 2), 1),
         "peak_memory_mb": {"db": None, "loader": None, "pipeline": None, "app": None},
         "note": (
-            "peak_memory_mb is filled in by hand from `docker stats` while "
-            "`docker compose up` runs — see README."
+            "Three alternating index conditions; three growth repeats. Warm OS/database caches are not flushed. "
+            "Use scripts/measure_system.py for full-run, laptop hardware and per-container memory evidence."
         ),
     }
 
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RESULTS_PATH.write_text(json.dumps(data, indent=2))
+    # Preserve independently sampled full-system evidence when rerunning queries.
+    if RESULTS_PATH.exists():
+        previous = json.loads(RESULTS_PATH.read_text())
+        for key in ("peak_memory_mb", "system_runs", "system_run_seconds", "hardware", "memory_method", "system_measured_at"):
+            if key in previous:
+                data[key] = previous[key]
+    temporary = RESULTS_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(data, indent=2))
+    temporary.replace(RESULTS_PATH)
     print(f"[measure] wrote {RESULTS_PATH}", flush=True)
     print(
         f"[measure] without index={without_idx:.4f}s with index={with_idx:.4f}s "
